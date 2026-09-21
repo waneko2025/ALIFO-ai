@@ -10,7 +10,7 @@ function t(el){if(el.dataset[language])el.textContent=el.dataset[language]}
 function applyLanguage(){
  document.documentElement.lang=language;
  document.querySelectorAll("[data-ja][data-en]").forEach(t);
- prompt.placeholder=prompt.dataset["placeholder-"+language];
+ prompt.placeholder=language==="ja"?prompt.dataset.placeholderJa:prompt.dataset.placeholderEn;
  $("#language").textContent=language==="ja"?"English":"日本語";
  $("#settingLanguage").value=language;
  renderHistory();
