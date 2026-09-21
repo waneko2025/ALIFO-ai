@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ALIFO AI</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="side-top">
+      <a class="logo" href="#"><span>A</span> ALIFO <b>AI</b></a>
+      <button class="icon-btn mobile-close" id="closeSidebar">×</button>
+    </div>
+    <button class="new-chat" id="newChat">＋ <span data-ja="新しいチャット" data-en="New chat">新しいチャット</span></button>
+    <div class="history-title" data-ja="チャット履歴" data-en="Chat history">チャット履歴</div>
+    <div id="history" class="history"></div>
+    <div class="side-bottom">
+      <button class="side-btn" id="settingsBtn">⚙ <span data-ja="設定" data-en="Settings">設定</span></button>
+    </div>
+  </aside>
+
+  <section class="workspace">
+    <header class="header">
+      <button class="icon-btn menu" id="openSidebar">☰</button>
+      <div class="header-title">ALIFO AI</div>
+      <button class="language" id="language">English</button>
+    </header>
+
+    <main class="chat">
+      <div id="empty" class="empty">
+        <div class="big-logo">A</div>
+        <div class="pill">ALIFO AI</div>
+        <h1 data-ja="何をお手伝いしましょう？" data-en="How can I help you?">何をお手伝いしましょう？</h1>
+        <p data-ja="質問、アイデア、文章作成などをAIに相談できます。" data-en="Ask questions, brainstorm ideas, write text, and more.">質問、アイデア、文章作成などをAIに相談できます。</p>
+        <div class="quick">
+          <button data-prompt-ja="面白いアイデアを3つ考えて" data-prompt-en="Give me three interesting ideas">💡 <span data-ja="アイデアを出す" data-en="Brainstorm">アイデアを出す</span></button>
+          <button data-prompt-ja="英語を勉強する方法を教えて" data-prompt-en="How can I study English?">📚 <span data-ja="勉強について聞く" data-en="Study help">勉強について聞く</span></button>
+          <button data-prompt-ja="自己紹介文を作って" data-prompt-en="Write a self introduction for me">✍️ <span data-ja="文章を書く" data-en="Write text">文章を書く</span></button>
+        </div>
+      </div>
+      <div id="messages" class="messages"></div>
+    </main>
+
+    <div class="composer-wrap">
+      <form id="form" class="composer">
+        <textarea id="prompt" rows="1"
+          data-placeholder-ja="ALIFO AIにメッセージを送る..."
+          data-placeholder-en="Message ALIFO AI..."></textarea>
+        <button id="send" type="submit">↑</button>
+      </form>
+      <div class="disclaimer" data-ja="ALIFO AIはAIによって生成された回答を提供します。" data-en="ALIFO AI provides AI-generated responses.">ALIFO AIはAIによって生成された回答を提供します。</div>
+    </div>
+  </section>
+</div>
+
+<div class="modal hidden" id="settings">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 data-ja="設定" data-en="Settings">設定</h2>
+      <button class="icon-btn" id="closeSettings">×</button>
+    </div>
+    <label>
+      <span data-ja="言語" data-en="Language">言語</span>
+      <select id="settingLanguage"><option value="ja">日本語</option><option value="en">English</option></select>
+    </label>
+    <button class="danger" id="clearHistory" data-ja="チャット履歴をすべて削除" data-en="Delete all chat history">チャット履歴をすべて削除</button>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
