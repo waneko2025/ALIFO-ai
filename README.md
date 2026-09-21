@@ -1,21 +1,25 @@
-# ALIFO AI — 無料画像生成版
+# ALIFO AI
 
-ALIFO AIの無料スマートチャットに、OpenAI APIキーを使わない画像生成ボタンを追加した版です。
+ALIFO AI is a small public demo web app with:
 
-## 特徴
-- テキスト会話：APIキー不要の無料スマートモード
-- 画像生成：Pollinationsの画像URL方式を利用
-- OpenAI APIキー：不要
-- APIキーをGitHubに保存する必要なし
+- Japanese / English UI
+- browser-side chat history
+- built-in rule-based smart chat mode (no OpenAI API key)
+- image generation through the Pollinations image URL service
+- image history, open and save controls
+- mobile-friendly layout
+- basic security headers and lightweight rate limiting
 
-## 重要
-画像生成サービスの無料・匿名利用、レート制限、モデル、利用条件は提供元の仕様変更によって変わる場合があります。画像が生成できない場合は、Renderのログとブラウザの表示を確認してください。
+## Important image-service note
+
+The image feature currently uses the Pollinations image URL service. Service availability, limits, models, and authentication requirements can change. ALIFO AI does not guarantee that image generation will remain anonymous or free forever.
+
+Image prompts are sent to the external image service. Do not enter passwords, API keys, or unnecessary private information into image prompts.
 
 ## Render
-Build Command: `npm install`
-Start Command: `npm start`
 
-環境変数の `OPENAI_API_KEY` は、この版では不要です。以前設定したものがあっても、この画像生成機能では使用しません。
+- Build command: `npm install`
+- Start command: `npm start`
+- Branch: `main`
 
-## 画像生成の仕組み
-ブラウザから `/api/image` に画像の説明を送り、サーバーがPollinationsの画像URLを作成します。生成画像そのものは外部サービスからブラウザに読み込まれます。
+No OpenAI API key is required by this version.

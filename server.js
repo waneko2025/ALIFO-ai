@@ -5,31 +5,67 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+const PORT = process.env.PORT || 3000;
 
+app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+
+// Basic security headers for a public demo app.
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Content-Security-Policy", [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https://image.pollinations.ai",
+    "connect-src 'self' https://image.pollinations.ai",
+    "font-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'"
+  ].join("; "));
+  next();
+});
+
+// Small in-memory rate limiter. It resets when the free Render instance restarts.
+const rateBuckets = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const old = rateBuckets.get(key);
+  if (!old || now - old.start >= windowMs) {
+    rateBuckets.set(key, { start: now, count: 1 });
+    return true;
+  }
+  if (old.count >= max) return false;
+  old.count += 1;
+  return true;
+}
+function clientKey(req, scope) {
+  return `${scope}:${req.ip || req.socket.remoteAddress || "unknown"}`;
+}
+
+app.use(express.static(path.join(__dirname, "public"), {
+  extensions: ["html"]
+}));
 
 function lastUser(messages = []) {
   return messages.filter(m => m.role === "user").at(-1)?.content?.trim() || "";
 }
-
 function previousUser(messages = []) {
   const list = messages.filter(m => m.role === "user");
   return list.length > 1 ? list.at(-2).content.trim() : "";
 }
-
 function containsAny(text, words) {
   return words.some(w => text.toLowerCase().includes(w.toLowerCase()));
 }
-
 function numbered(items) {
   return items.map((x, i) => `${i + 1}. ${x}`).join("\n");
 }
 
 function smartJapanese(q, history) {
-  const lower = q.toLowerCase();
   const prev = previousUser(history);
-
   if (!q) return "質問や相談を入力してください。";
   if (containsAny(q, ["こんにちは", "こんばんは", "おはよう", "やあ", "hello", "hi"])) {
     return "こんにちは！ALIFO AIです。\n\n質問、勉強、アイデア、文章作成、プログラミング、雑談など、いろいろ相談してください。\n\nたとえば「文化祭のアイデアを考えて」「数学の勉強方法を教えて」のように自由に入力できます。";
@@ -77,17 +113,15 @@ function smartJapanese(q, history) {
   if (containsAny(q, ["予定", "スケジュール", "todo", "やること", "計画"])) {
     return "計画を一緒に整理できます。\n\nまず、やることを全部書き出して、次に「今日・今週・あとで」に分けると簡単です。\n\nやることを箇条書きで送ってくれれば、順番を整理します。";
   }
-  if (containsAny(q, ["どうして", "なぜ", "理由", "意味", "とは"] ) || q.endsWith("？") || q.endsWith("?")) {
+  if (containsAny(q, ["どうして", "なぜ", "理由", "意味", "とは"]) || q.endsWith("？") || q.endsWith("?")) {
     return `「${q}」についてですね。\n\n無料スマートモードでは、まず質問を「意味・理由・具体例」の3方向から整理して考えます。\n\n・意味：何を指している？\n・理由：なぜそうなる？\n・具体例：実際にはどうなる？\n\nもう少し具体的な対象や、知りたいポイントを教えてくれれば、さらに絞って説明します。`;
   }
   if (containsAny(q, ["面白い", "暇", "雑談", "話そう", "相談"])) {
     return "いいですね！😊\n\n雑談でも相談でも大丈夫です。\n\n今の気分に近いものを選ぶなら：\n1. 面白いことを考える\n2. 新しいアイデアを出す\n3. 勉強について話す\n4. ALIFO AIをもっと改良する\n\n番号か、話したいことをそのまま送ってください。";
   }
-
   if (prev) {
     return `「${q}」についてですね。\n\n前の話「${prev.slice(0, 40)}${prev.length > 40 ? "…" : ""}」につなげて考えるなら、まず目的を1つに絞ると進めやすいです。\n\n「もっと具体的に」「例を出して」「短くして」「別の案」などと送ってくれれば、その方向に変えます。`;
   }
-
   return `「${q}」について考えてみます。\n\nこの無料スマートモードでは、質問をテーマ・目的・具体例に分けて整理することができます。\n\nたとえば「もっと詳しく」「例を3つ」「小学生にも分かるように」「短くまとめて」のような追加指示にも対応します。\n\n※この版は外部の生成AI APIを使わないため、どんな質問にも完全に答えられるわけではありません。`;
 }
 
@@ -110,26 +144,28 @@ function smartReply(messages, language) {
 }
 
 app.post("/api/chat", (req, res) => {
+  if (!rateLimit(clientKey(req, "chat"), 60, 60_000)) {
+    return res.status(429).json({ error: "しばらく待ってからもう一度お試しください。" });
+  }
   try {
     const { messages = [], language = "ja" } = req.body || {};
-    const text = smartReply(Array.isArray(messages) ? messages : [], language === "en" ? "en" : "ja");
+    const safeMessages = Array.isArray(messages) ? messages.slice(-30) : [];
+    const text = smartReply(safeMessages, language === "en" ? "en" : "ja");
     res.json({ text });
-  } catch (error) {
+  } catch {
     res.status(400).json({ error: "メッセージを処理できませんでした。" });
   }
 });
 
-
-app.post("/api/image", async (req, res) => {
+app.post("/api/image", (req, res) => {
+  if (!rateLimit(clientKey(req, "image"), 10, 60_000)) {
+    return res.status(429).json({ error: "画像生成の回数が多いため、少し待ってからお試しください。" });
+  }
   try {
     const { prompt = "", size = "1024x1024" } = req.body || {};
-    const cleanPrompt = String(prompt).trim();
-    if (!cleanPrompt) {
-      return res.status(400).json({ error: "画像の説明を入力してください。" });
-    }
+    const cleanPrompt = String(prompt).trim().slice(0, 1000);
+    if (!cleanPrompt) return res.status(400).json({ error: "画像の説明を入力してください。" });
 
-    // OpenAI APIキーを使わず、Pollinationsの画像URL方式を利用します。
-    // 無料・匿名利用の可否やレート制限は提供元の仕様変更により変わる場合があります。
     const [width, height] = String(size).split("x").map(Number);
     const safeWidth = Number.isFinite(width) && width >= 256 && width <= 1536 ? width : 1024;
     const safeHeight = Number.isFinite(height) && height >= 256 && height <= 1536 ? height : 1024;
@@ -144,7 +180,6 @@ app.post("/api/image", async (req, res) => {
       seed: String(seed)
     });
     const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?${params.toString()}`;
-
     res.json({ image: imageUrl, provider: "Pollinations" });
   } catch (error) {
     console.error(error);
@@ -152,10 +187,32 @@ app.post("/api/image", async (req, res) => {
   }
 });
 
-app.get("/{*splat}", (_, res) =>
-  res.sendFile(path.join(__dirname, "public", "index.html"))
-);
+// Download proxy. Only the exact Pollinations image host is allowed.
+app.get("/api/image-download", async (req, res) => {
+  try {
+    const raw = String(req.query.url || "");
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.hostname !== "image.pollinations.ai") {
+      return res.status(400).send("Invalid image URL");
+    }
+    const upstream = await fetch(url, { redirect: "follow" });
+    if (!upstream.ok) return res.status(502).send("Image service unavailable");
+    const contentType = upstream.headers.get("content-type") || "";
+    if (!contentType.startsWith("image/")) return res.status(502).send("Not an image");
+    const length = Number(upstream.headers.get("content-length") || 0);
+    if (length > 15 * 1024 * 1024) return res.status(413).send("Image too large");
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (buffer.length > 15 * 1024 * 1024) return res.status(413).send("Image too large");
+    const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="alifo-ai-image.${ext}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(buffer);
+  } catch {
+    res.status(400).send("Unable to download image");
+  }
+});
 
-app.listen(process.env.PORT || 3000, () =>
-  console.log(`ALIFO AI smart free mode running on http://localhost:${process.env.PORT || 3000}`)
-);
+app.get("/{*splat}", (_, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+
+app.listen(PORT, () => console.log(`ALIFO AI running on http://localhost:${PORT}`));
