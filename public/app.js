@@ -81,7 +81,7 @@ async function generateImage() {
   const text = prompt.value.trim(); if (!text) return;
   ensureChat(); addMessage("user", `🖼 ${text}`);
   prompt.value = ""; prompt.style.height = "auto"; send.disabled = true; generateImageBtn.disabled = true;
-  const loading = addMessage("ai", language === "ja" ? "画像を生成しています…" : "Generating image…");
+  const loading = addMessage("ai", language === "ja" ? "画像を生成しています…" : "Generating image…", false);
   try {
     const r = await fetch("/api/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, size: "1024x1024" }) });
     const d = await r.json(); if (!r.ok) throw Error(d.error || "Image request failed");
@@ -92,7 +92,7 @@ async function generateImage() {
 }
 async function sendMessage(text) {
   const c = ensureChat(); addMessage("user", text); prompt.value = ""; prompt.style.height = "auto"; send.disabled = true;
-  const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…");
+  const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
   try {
     const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: c.messages, language }) });
     const d = await r.json(); if (!r.ok) throw Error(d.error || "Request failed");
