@@ -121,38 +121,40 @@ app.post("/api/chat", (req, res) => {
 
 
 app.post("/api/image", async (req, res) => {
-  const { prompt = "", size = "1024x1024" } = req.body || {};
-  if (!prompt.trim()) {
-    return res.status(400).json({ error: "画像の説明を入力してください。" });
+  try {
+    const { prompt = "", size = "1024x1024" } = req.body || {};
+    const cleanPrompt = String(prompt).trim();
+    if (!cleanPrompt) {
+      return res.status(400).json({ error: "画像の説明を入力してください。" });
+    }
+
+    // OpenAI APIキーを使わず、Pollinationsの画像URL方式を利用します。
+    // 無料・匿名利用の可否やレート制限は提供元の仕様変更により変わる場合があります。
+    const [width, height] = String(size).split("x").map(Number);
+    const safeWidth = Number.isFinite(width) && width >= 256 && width <= 1536 ? width : 1024;
+    const safeHeight = Number.isFinite(height) && height >= 256 && height <= 1536 ? height : 1024;
+    const seed = Math.floor(Math.random() * 2147483647);
+    const params = new URLSearchParams({
+      model: "flux",
+      width: String(safeWidth),
+      height: String(safeHeight),
+      nologo: "true",
+      private: "true",
+      safe: "true",
+      seed: String(seed)
+    });
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?${params.toString()}`;
+
+    res.json({ image: imageUrl, provider: "Pollinations" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "画像生成の準備中にエラーが発生しました。" });
   }
-
-  // No external API is used here. Create a simple SVG illustration locally.
-  const safe = prompt.trim().replace(/[&<>"]/g, (ch) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"
-  }[ch]));
-
-  const width = size === "1024x1536" ? 1024 : size === "1536x1024" ? 1536 : 1024;
-  const height = size === "1024x1536" ? 1536 : size === "1536x1024" ? 1024 : 1024;
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#e8f1ff"/>
-      <stop offset="100%" stop-color="#f7e8ff"/>
-    </linearGradient>
-  </defs>
-  <rect width="100%" height="100%" fill="url(#bg)"/>
-  <circle cx="${width*0.18}" cy="${height*0.2}" r="${Math.min(width,height)*0.09}" fill="#ffffff" opacity="0.8"/>
-  <circle cx="${width*0.82}" cy="${height*0.72}" r="${Math.min(width,height)*0.13}" fill="#ffffff" opacity="0.55"/>
-  <rect x="${width*0.1}" y="${height*0.33}" width="${width*0.8}" height="${height*0.34}" rx="36" fill="#ffffff" opacity="0.92"/>
-  <text x="${width/2}" y="${height*0.46}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.min(width,height)*0.045}" font-weight="700" fill="#25324a">ALIFO AI</text>
-  <text x="${width/2}" y="${height*0.54}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.min(width,height)*0.025}" fill="#4d5b73">ローカル画像メーカー</text>
-  <text x="${width/2}" y="${height*0.61}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.min(width,height)*0.018}" fill="#64748b">${safe}</text>
-</svg>`;
-
-  const dataUrl = "data:image/svg+xml;base64," + Buffer.from(svg, "utf8").toString("base64");
-  res.json({ image: dataUrl, mode: "local" });
 });
+
+app.get("/{*splat}", (_, res) =>
+  res.sendFile(path.join(__dirname, "public", "index.html"))
+);
 
 app.listen(process.env.PORT || 3000, () =>
   console.log(`ALIFO AI smart free mode running on http://localhost:${process.env.PORT || 3000}`)

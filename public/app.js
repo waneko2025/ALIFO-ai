@@ -65,7 +65,7 @@ async function generateImage(){
  prompt.value="";prompt.style.height="auto";send.disabled=true;generateImageBtn.disabled=true;
  const loading=addMessage("ai",language==="ja"?"画像を生成しています…":"Generating image…");
  try{
-   const r=await fetch("/api/image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:text,size:"1024x1024",quality:"auto"})});
+   const r=await fetch("/api/image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:text,size:"1024x1024"})});
    const d=await r.json(); if(!r.ok)throw Error(d.error||"Image request failed");
    loading.remove(); addImageMessage(d.image,text);
  }catch(e){loading.querySelector(".bubble").textContent=language==="ja"?`画像生成エラー: ${e.message}`:`Image error: ${e.message}`}
