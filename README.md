@@ -1,27 +1,38 @@
-# ALIFO AI — Free Mode
+# ALIFO AI — APIキー不要版 v1.3
 
-ALIFO AI is a Japanese/English chat website that can be published without an OpenAI API key.
+ALIFO AI は、APIキーなしで公開できる無料モードのWebアプリです。
 
-## Important
+## 特徴
 
-This version does **not** call a paid AI API. It uses built-in local responses, so there is no OpenAI API charge from this app.
+- APIキー不要
+- 外部AI APIへの接続なし
+- API料金なし
+- チャット機能
+- 🖼️ ローカル画像作成機能
+- Render / GitHub で公開可能
 
-It is a free/demo chatbot rather than a full large-language-model service. You can later replace the `/api/chat` implementation with a real AI provider if you decide to add API billing.
+### 画像作成について
 
-## Deploy to Render
+この版の画像ボタンは、外部の画像生成AIを呼び出さず、ブラウザ/サーバー上でSVG画像を作成します。
+そのため本物の生成AIによる画像生成ではありませんが、APIキーなしで動作します。
 
-1. Upload these project files to your GitHub repository.
-2. In Render, connect the repository.
-3. Build Command: `npm install`
-4. Start Command: `npm start`
-5. No API key or Environment Variables are required.
-6. Deploy.
+## Render
 
-## Local run
-
-```bash
+Build Command:
+```text
 npm install
+```
+
+Start Command:
+```text
 npm start
 ```
 
-Then open `http://localhost:3000`.
+Environment Variables は基本的に不要です。
+
+必要なら `PORT` のみ設定できますが、Render では通常自動設定されるため設定不要です。
+
+## GitHub
+
+`.env` はコミットしないでください。
+APIキーはこのバージョンでは使用しません。
