@@ -182,65 +182,30 @@ async function sendMessage(text) {
     addMessage("user", text);
   }
   prompt.value = ""; prompt.style.height = "auto"; send.disabled = true;
-  const loading = addMessage("ai", language === "ja" ? "AIを準備しています…" : "Preparing AI…", false);
+  const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
   try {
-    const engine = await getLocalEngine();
-    const history = c.messages
-      .filter(m => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
-      .slice(-6)
-      .map(m => ({ role: m.role, content: m.content.slice(0, 2000) }));
-    const system = language === "ja"
-      ? "あなたはALIFO AIです。日本語で自然に、短く分かりやすく答えてください。ユーザーの質問を繰り返したり、質問文を言い換えるだけの返答はしないでください。まず答えを直接書き、必要なら理由や具体例を続けてください。数を指定されたらその数だけ答えてください。分からないことは推測せず、分からないと伝えてください。新しい質問は新しい話題として扱ってください。"
-      : "You are ALIFO AI. Reply naturally in English. Answer the user's question directly first. Do not merely restate the user's question. If the user asks for a specific number of items, provide exactly that number of concrete items. Ask a short clarification only when necessary. Do not force a new question into the previous topic; treat it as a new topic when appropriate. Be clear and friendly.";
-    let textOut = "";
-    textOut = await engine.generate({
-      messages: historyWithSystem(history, system),
-      max_new_tokens: 256
-    }, (piece) => {
-      textOut += piece;
-      loading.querySelector(".bubble").textContent = textOut;
-      scrollToBottom();
+    // Stable no-GPU mode: use the server-side no-API response engine.
+    // This intentionally does not initialize WebGPU, Transformers.js, WASM, or a Worker.
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: c.messages.slice(-30), language })
     });
-
-    textOut = textOut.trim();
-    if (!textOut) throw new Error(language === "ja" ? "AIから回答を受け取れませんでした。" : "The AI did not return a response.");
-    // Guard against broken/repetitive generations such as a long run of the same symbol.
-    const compact = textOut.replace(/\s/g, "");
-    const punctuationOnly = compact.length >= 20 && !/[\p{L}\p{N}]/u.test(compact);
-    const repeated = compact.length >= 30 && /(.)\1{12,}/u.test(compact);
-    const echoedPrompt = textOut.length >= Math.max(40, text.length * 1.2) &&
-      textOut.includes(text.slice(0, Math.min(24, text.length)));
-    if (punctuationOnly || repeated || echoedPrompt) {
-      throw new Error(language === "ja" ? "AIの出力が不安定でした。" : "The AI produced an unstable response.");
-    }
-    loading.querySelector(".bubble").textContent = textOut;
-    c.messages.push({ role: "assistant", content: textOut });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Chat request failed");
+    const answer = String(d.text || "").trim();
+    if (!answer) throw new Error(language === "ja" ? "回答を受け取れませんでした。" : "No response was received.");
+    loading.querySelector(".bubble").textContent = answer;
+    c.messages.push({ role: "assistant", content: answer });
     save();
+    const status = document.querySelector("#localAiStatus");
+    if (status) status.textContent = language === "ja"
+      ? "安定モード（WebGPU不要・CPU負荷が小さい）で動作中"
+      : "Stable mode active (no WebGPU, low CPU load)";
   } catch (e) {
-    // If WebLLM cannot be loaded (for example, a CDN/network issue), keep ALIFO AI usable
-    // by falling back to the server-side no-API smart reply engine.
-    try {
-      const r = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: c.messages.slice(-30), language })
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Fallback request failed");
-      const fallback = String(d.text || "").trim();
-      if (!fallback) throw new Error("Empty fallback response");
-      loading.querySelector(".bubble").textContent = fallback;
-      c.messages.push({ role: "assistant", content: fallback });
-      save();
-      const status = document.querySelector("#localAiStatus");
-      if (status) status.textContent = language === "ja"
-        ? `端末内AI（CPU/WASM）を起動できなかったため、サーバーの軽量モードで動作中（原因: ${e.message}）`
-        : `On-device AI could not be loaded; lightweight mode is active (reason: ${e.message})`;
-    } catch (fallbackError) {
-      loading.querySelector(".bubble").textContent = language === "ja"
-        ? `AIを起動できませんでした。\n${e.message}`
-        : `Could not start the local AI.\n${e.message}`;
-    }
+    loading.querySelector(".bubble").textContent = language === "ja"
+      ? `回答できませんでした。\n${e.message}`
+      : `I couldn't answer that.\n${e.message}`;
   } finally { send.disabled = false; prompt.focus(); }
 }
 
