@@ -110,6 +110,9 @@ function smartJapanese(q, history) {
     return "やほー！😄 今日はどうしたの？\n\n雑談でも、質問でも、何か作る相談でも大丈夫だよ。";
   }
   if (containsAny(q, ["元気？", "元気", "調子どう"])) return "元気だよ！😄 ALIFO AIはいつでも話せるよ。今日は何について話そっか？";
+  if (containsAny(q, ["ALIFO AIですか", "ALIFO AI ですか", "ALIFO AIなの", "ALIFO AIなの？", "あなたはALIFO AI", "ここはALIFO AI"])) {
+    return "はい、ALIFO AIだよ！😊\n\nここで質問したり、雑談したり、アイデアを考えたり、勉強や文章づくりを手伝ったりできるよ。\n\n何か聞きたいことがあれば、そのまま送ってね！";
+  }
   if (containsAny(q, ["あなたは誰", "何ができる", "できること", "何できる", "どんなこと"])) {
     return "私はALIFO AIだよ。😊\n\nできることは、たとえばこんな感じ！\n" + numbered([
       "雑談やちょっとした相談",
