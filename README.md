@@ -36,3 +36,8 @@ WebGPU/Transformers.js/WASMの自動起動を停止し、チャットはサー�
 - 短い新しい話題（例: 「お金」「火星」）を会話の続きと誤認せず、知識検索として処理します。
 - 「それ」「もっと詳しく」などの明確な続きは従来どおり会話コンテキストとして処理します。
 - 小学生向けの回答では文章を短く区切ります。
+
+
+## v4.8
+- Explicit new-task requests such as 「作文を作って」 no longer inherit the previous conversation context.
+- Added a lightweight response for essay-writing requests.
