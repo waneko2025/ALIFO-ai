@@ -1,4 +1,10 @@
-import { CreateMLCEngine, prebuiltAppConfig } from "@mlc-ai/web-llm";
+import { pipeline, TextStreamer, env } from "@huggingface/transformers";
+
+// ALIFO AI runs its local language model on CPU/WASM only in this mode.
+// WebGPU is intentionally not required.
+env.allowRemoteModels = true;
+env.allowLocalModels = false;
+env.useBrowserCache = true;
 let language = localStorage.getItem("alifo_lang") || "ja";
 let chats = JSON.parse(localStorage.getItem("alifo_chats") || "[]");
 let currentId = null;
@@ -8,79 +14,72 @@ const messages = $("#messages"), empty = $("#empty"), prompt = $("#prompt"), sen
 let pendingAttachment = null;
 let localEngine = null;
 let localEnginePromise = null;
-const LOCAL_MODELS = [
-  {
-    id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
-    label: "Llama 3.2 1B",
-    approx: "約900MB"
-  }
-];
+const LOCAL_MODEL = {
+  id: "onnx-community/Qwen2.5-0.5B-Instruct",
+  label: "Qwen2.5 0.5B",
+  approx: "約483MB（q4f16）"
+};
 
 async function getLocalEngine() {
   if (localEngine) return localEngine;
   if (localEnginePromise) return localEnginePromise;
+
   localEnginePromise = (async () => {
     const status = (text) => {
       const el = document.querySelector("#localAiStatus");
       if (el) el.textContent = text;
     };
 
-    if (!navigator.gpu) {
-      throw new Error(language === "ja"
-        ? "WebGPUが利用できません。Chromeのハードウェアアクセラレーションを確認してください。"
-        : "WebGPU is not available. Check Chrome hardware acceleration.");
-    }
+    status(language === "ja"
+      ? `端末内AI（CPU/WASM）を準備しています… 初回は${LOCAL_MODEL.approx}程度のダウンロードがあります`
+      : `Preparing on-device AI (CPU/WASM)… first run downloads about ${LOCAL_MODEL.approx}`);
 
-    status(language === "ja" ? "WebGPUを確認しています…" : "Checking WebGPU…");
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) {
-      throw new Error(language === "ja"
-        ? "WebGPUアダプターを取得できませんでした。GPUまたはハードウェアアクセラレーションを確認してください。"
-        : "Could not obtain a WebGPU adapter. Check your GPU or hardware acceleration.");
-    }
-
-    const errors = [];
-    for (const model of LOCAL_MODELS) {
-      try {
+    let lastProgress = 0;
+    const progress_callback = (p) => {
+      if (p?.status === "progress_total" && Number.isFinite(p.progress)) {
+        const pct = Math.max(0, Math.min(100, Math.round(p.progress)));
+        if (pct !== lastProgress) {
+          lastProgress = pct;
+          status(language === "ja"
+            ? `端末内AI（CPU/WASM）を準備中… ${pct}%`
+            : `Preparing on-device AI (CPU/WASM)… ${pct}%`);
+        }
+      } else if (p?.status === "ready") {
         status(language === "ja"
-          ? `${model.label}を起動しています… 初回は${model.approx}のダウンロードが必要です`
-          : `Starting ${model.label}… first run downloads ${model.approx}`);
-
-        // Keep the configuration minimal and follow WebLLM's documented prebuilt-model path.
-        // A smaller second model is used automatically if the first model cannot initialize.
-        status(language === "ja"
-          ? `${model.label}を準備中… 0%（初回はモデルをダウンロードします。画面を閉じずに待ってください）`
-          : `Preparing ${model.label}… 0% (first run downloads the model; keep this page open)`);
-        const engine = await Promise.race([
-          CreateMLCEngine(model.id, {
-          appConfig: { ...prebuiltAppConfig, cacheBackend: "cache" },
-          initProgressCallback: (p) => {
-            const pct = Math.max(0, Math.min(100, Math.round((p.progress || 0) * 100)));
-            const phase = String(p.text || "").trim();
-            status(language === "ja"
-              ? `${model.label}を準備中… ${pct}%${phase ? ` — ${phase}` : ""}`
-              : `Preparing ${model.label}… ${pct}%${phase ? ` — ${phase}` : ""}`);
-          }
-        }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("MODEL_INIT_TIMEOUT")), 12 * 60 * 1000))
-        ]);
-
-        localEngine = engine;
-        status(language === "ja" ? `端末内AIを使用中（${model.label}）` : `Using on-device AI (${model.label})`);
-        return engine;
-      } catch (err) {
-        errors.push(`${model.id}: ${err?.message === "MODEL_INIT_TIMEOUT" ? "12分以内にモデルの準備が完了しませんでした" : (err?.message || String(err))}`);
+          ? "端末内AI（CPU/WASM）の準備が完了しました"
+          : "On-device AI (CPU/WASM) is ready");
       }
+    };
+
+    try {
+      // Transformers.js defaults to WASM/CPU in the browser. Explicitly selecting
+      // WASM means this path does not depend on navigator.gpu/requestAdapter().
+      const generator = await pipeline(
+        "text-generation",
+        LOCAL_MODEL.id,
+        {
+          device: "wasm",
+          dtype: "q4",
+          progress_callback
+        }
+      );
+
+      localEngine = generator;
+      status(language === "ja"
+        ? `端末内AIを使用中（${LOCAL_MODEL.label} / CPU）`
+        : `Using on-device AI (${LOCAL_MODEL.label} / CPU)`);
+      return generator;
+    } catch (err) {
+      const message = err?.message || String(err);
+      throw new Error(language === "ja"
+        ? `CPU/WASM版AIを起動できませんでした。モデルのダウンロードとブラウザの保存容量を確認してください。詳細: ${message}`
+        : `The CPU/WASM AI could not start. Check the model download and browser storage. Details: ${message}`);
     }
-
-    const detail = errors.join(" | ");
-    throw new Error(language === "ja"
-      ? `ローカルAIを起動できませんでした。WebGPUまたはGPUメモリ、モデルのダウンロードを確認してください。詳細: ${detail}`
-      : `The on-device AI could not start. Check WebGPU, GPU memory, and model downloads. Details: ${detail}`);
   })();
-  try { return await localEnginePromise; } finally { localEnginePromise = null; }
-}
 
+  try { return await localEnginePromise; }
+  finally { localEnginePromise = null; }
+}
 function save() {
   try { localStorage.setItem("alifo_chats", JSON.stringify(chats)); }
   catch { /* keep the current session usable if localStorage is full */ }
@@ -185,6 +184,10 @@ async function generateImage() {
     loading.querySelector(".bubble").textContent = language === "ja" ? `画像生成エラー: ${e.message}` : `Image error: ${e.message}`;
   } finally { send.disabled = false; generateImageBtn.disabled = false; prompt.focus(); }
 }
+function historyWithSystem(history, system) {
+  return [{ role: "system", content: system }, ...history];
+}
+
 async function sendMessage(text) {
   const c = ensureChat();
   const attachment = pendingAttachment;
@@ -206,23 +209,24 @@ async function sendMessage(text) {
     const system = language === "ja"
       ? "あなたはALIFO AIです。日本語で自然に、短く分かりやすく答えてください。ユーザーの質問を繰り返したり、質問文を言い換えるだけの返答はしないでください。まず答えを直接書き、必要なら理由や具体例を続けてください。数を指定されたらその数だけ答えてください。分からないことは推測せず、分からないと伝えてください。新しい質問は新しい話題として扱ってください。"
       : "You are ALIFO AI. Reply naturally in English. Answer the user's question directly first. Do not merely restate the user's question. If the user asks for a specific number of items, provide exactly that number of concrete items. Ask a short clarification only when necessary. Do not force a new question into the previous topic; treat it as a new topic when appropriate. Be clear and friendly.";
-    const stream = await engine.chat.completions.create({
-      messages: [{ role: "system", content: system }, ...history],
-      temperature: 0.6,
-      top_p: 0.9,
-      repetition_penalty: 1.05,
-      frequency_penalty: 0.08,
-      max_tokens: 256,
-      stream: true
-    });
     let textOut = "";
-    for await (const chunk of stream) {
-      const piece = chunk?.choices?.[0]?.delta?.content || "";
-      if (!piece) continue;
-      textOut += piece;
-      loading.querySelector(".bubble").textContent = textOut;
-      scrollToBottom();
-    }
+    const streamer = new TextStreamer(engine.tokenizer, {
+      skip_prompt: true,
+      skip_special_tokens: true,
+      callback_function: (piece) => {
+        textOut += piece;
+        loading.querySelector(".bubble").textContent = textOut;
+        scrollToBottom();
+      }
+    });
+
+    const result = await engine(historyWithSystem(history, system), {
+      max_new_tokens: 256,
+      do_sample: false,
+      streamer,
+      return_full_text: false
+    });
+
     textOut = textOut.trim();
     if (!textOut) throw new Error(language === "ja" ? "AIから回答を受け取れませんでした。" : "The AI did not return a response.");
     // Guard against broken/repetitive generations such as a long run of the same symbol.
@@ -255,7 +259,7 @@ async function sendMessage(text) {
       save();
       const status = document.querySelector("#localAiStatus");
       if (status) status.textContent = language === "ja"
-        ? `端末内AIを起動できなかったため、軽量モードで動作中（原因: ${e.message}）`
+        ? `端末内AI（CPU/WASM）を起動できなかったため、サーバーの軽量モードで動作中（原因: ${e.message}）`
         : `On-device AI could not be loaded; lightweight mode is active (reason: ${e.message})`;
     } catch (fallbackError) {
       loading.querySelector(".bubble").textContent = language === "ja"
@@ -320,8 +324,9 @@ async function runWebGPUDiagnostic() {
     add(language === "ja" ? "WebGPU診断時刻" : "Diagnostic time", new Date().toISOString());
   } catch {}
 
+  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Transformers.js / ONNX Runtime Web / WASM (CPU)");
   const report = lines.join("\n");
-  const title = language === "ja" ? "WebGPU診断結果" : "WebGPU diagnostic result";
+  const title = language === "ja" ? "AI実行環境の診断結果" : "AI runtime diagnostic result";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";
   box.innerHTML = `<strong class="${cls}">${title}</strong><pre>${escapeHtml(report)}</pre><div class="diag-actions"><button class="diag-copy" id="copyDiagnostic">${language === "ja" ? "結果をコピー" : "Copy result"}</button></div>`;
   const copy = document.querySelector("#copyDiagnostic");

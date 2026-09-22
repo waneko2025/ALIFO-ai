@@ -39,3 +39,10 @@ SmolLM2 360M q4f32_1 を先に試し、失敗時にLlama 3.2 1Bへフォール�
 
 ## v3.6 WebGPU診断
 設定画面の「WebGPU診断を実行」から、WebGPU API、Secure Context、GPUアダプター、GPU情報、主要なWebGPU制限値を確認できます。結果はコピーできます。モデルのダウンロードやAPIキーは不要です。
+
+
+## v3.7 CPU/WASM mode
+
+ALIFO AI v3.7 does not require WebGPU for text chat. It uses Hugging Face Transformers.js with ONNX Runtime Web and explicitly selects the WASM/CPU backend. The first chat downloads and caches the Qwen2.5-0.5B-Instruct ONNX model; later sessions can reuse the browser cache. WebGPU is not required for text chat.
+
+The model is served from the Hugging Face Hub and is licensed separately; see its model card for details.

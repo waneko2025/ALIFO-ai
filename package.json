@@ -1,6 +1,6 @@
 {
   "name": "alifo-ai",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,10 +9,10 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@mlc-ai/web-llm": "0.2.85",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "vite": "^7.1.5"
+    "vite": "^7.1.5",
+    "@huggingface/transformers": "3.8.1"
   },
   "engines": {
     "node": ">=20"
