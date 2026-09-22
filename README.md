@@ -15,3 +15,8 @@ WebGPU/Transformers.js/WASMの自動起動を停止し、チャットはサー�
 
 ## v4.2
 送信中に入力文字が消えないようにし、失敗時は入力内容を復元します。
+
+## v4.3
+- Fixed missing application state initialization that caused chat history and messages to disappear.
+- Preserves `alifo_chats` localStorage data when valid.
+- Stable server chat mode; no WebGPU/CPU model initialization.

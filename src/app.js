@@ -1,3 +1,22 @@
+// ALIFO AI v4.3 stable state initialization
+const $ = (sel) => document.querySelector(sel);
+const messages = $("#messages");
+const empty = $("#empty");
+const prompt = $("#prompt");
+const send = $("#send");
+const generateImageBtn = $("#generateImage");
+const attachImageBtn = $("#attachImage");
+const imageInput = $("#imageInput");
+let language = localStorage.getItem("alifo_lang") === "en" ? "en" : "ja";
+let chats = [];
+let currentId = null;
+let pendingAttachment = null;
+try {
+  const raw = localStorage.getItem("alifo_chats");
+  const parsed = raw ? JSON.parse(raw) : [];
+  if (Array.isArray(parsed)) chats = parsed.filter(c => c && typeof c === "object" && Array.isArray(c.messages));
+} catch { chats = []; }
+
 // CPU/WASM mode: load Transformers.js from a CDN at runtime so the server build
 // does not need the package installed. WebGPU is never requested.
 let aiWorker = null;
@@ -181,7 +200,8 @@ async function sendMessage(text) {
   } else {
     addMessage("user", text);
   }
-  const originalPrompt = prompt.value;
+  const originalPrompt = text;
+  prompt.value = "";
   prompt.style.height = "auto"; send.disabled = true;
   const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
   try {
@@ -244,15 +264,8 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
   }
 
-  try {
-    const tf = await getTransformers();
-    add(language === "ja" ? "Transformers.js" : "Transformers.js", "3.8.1 / loaded");
-    add(language === "ja" ? "モデル" : "Model", LOCAL_MODEL.id);
-    add(language === "ja" ? "実行方式" : "Execution", "WASM / CPU");
-  } catch (err) {
-    overall = "error";
-    add(language === "ja" ? "Transformers.js読み込み" : "Transformers.js load", `ERROR ${err?.message || err}`);
-  }
+  add(language === "ja" ? "AI実行方式" : "AI execution", "Stable server mode / no WebGPU");
+  add(language === "ja" ? "WebGPU" : "WebGPU", "使用しません");
   try {
     const origin = location.origin;
     add(language === "ja" ? "ALIFO AIのオリジン" : "ALIFO AI origin", origin);
@@ -323,3 +336,12 @@ document.querySelectorAll(".quick button").forEach(b => b.onclick = () => sendMe
 
 if (!chats.length) newChat(); else { currentId = chats[0].id; renderChat(); renderHistory(); }
 applyLanguage();
+
+window.addEventListener("error", (event) => {
+  const status = document.querySelector("#localAiStatus");
+  if (status) status.textContent = language === "ja" ? "エラーが発生しました。ページを再読み込みしてください。" : "An error occurred. Please reload the page.";
+});
+window.addEventListener("unhandledrejection", () => {
+  const status = document.querySelector("#localAiStatus");
+  if (status) status.textContent = language === "ja" ? "処理中にエラーが発生しました。" : "An error occurred during processing.";
+});
