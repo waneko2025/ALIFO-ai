@@ -8,7 +8,18 @@ const messages = $("#messages"), empty = $("#empty"), prompt = $("#prompt"), sen
 let pendingAttachment = null;
 let localEngine = null;
 let localEnginePromise = null;
-const LOCAL_MODEL = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+const LOCAL_MODELS = [
+  {
+    id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
+    label: "Llama 3.2 1B",
+    approx: "約900MB"
+  },
+  {
+    id: "SmolLM2-360M-Instruct-q4f32_1-MLC",
+    label: "SmolLM2 360M",
+    approx: "約600MB"
+  }
+];
 
 async function getLocalEngine() {
   if (localEngine) return localEngine;
@@ -21,43 +32,48 @@ async function getLocalEngine() {
 
     if (!navigator.gpu) {
       throw new Error(language === "ja"
-        ? "このブラウザではWebGPUが利用できません。Chrome/Edgeのハードウェアアクセラレーションを確認してください。"
-        : "WebGPU is not available. Check browser hardware acceleration.");
+        ? "WebGPUが利用できません。Chromeのハードウェアアクセラレーションを確認してください。"
+        : "WebGPU is not available. Check Chrome hardware acceleration.");
     }
 
     status(language === "ja" ? "WebGPUを確認しています…" : "Checking WebGPU…");
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) {
       throw new Error(language === "ja"
-        ? "WebGPUアダプターを取得できませんでした。Chromeのハードウェアアクセラレーションを有効にしてください。"
-        : "Could not obtain a WebGPU adapter. Enable hardware acceleration in Chrome.");
+        ? "WebGPUアダプターを取得できませんでした。GPUまたはハードウェアアクセラレーションを確認してください。"
+        : "Could not obtain a WebGPU adapter. Check your GPU or hardware acceleration.");
     }
 
-    const record = prebuiltAppConfig?.model_list?.find(m => m.model_id === LOCAL_MODEL);
-    if (!record) {
-      throw new Error(language === "ja"
-        ? "ローカルAIモデルの設定が見つかりませんでした。"
-        : "The local AI model configuration was not found.");
-    }
+    const errors = [];
+    for (const model of LOCAL_MODELS) {
+      try {
+        status(language === "ja"
+          ? `${model.label}を起動しています… 初回は${model.approx}のダウンロードが必要です`
+          : `Starting ${model.label}… first run downloads ${model.approx}`);
 
-    status(language === "ja"
-      ? "端末内AIを読み込んでいます… 初回は約900MBのモデルをダウンロードします"
-      : "Loading on-device AI… the first run downloads about 900 MB");
+        // Keep the configuration minimal and follow WebLLM's documented prebuilt-model path.
+        // A smaller second model is used automatically if the first model cannot initialize.
+        const engine = await CreateMLCEngine(model.id, {
+          initProgressCallback: (p) => {
+            const pct = Math.max(0, Math.min(100, Math.round((p.progress || 0) * 100)));
+            status(language === "ja"
+              ? `${model.label}を準備中… ${pct}%`
+              : `Preparing ${model.label}… ${pct}%`);
+          }
+        });
 
-    const engine = await CreateMLCEngine(LOCAL_MODEL, {
-      appConfig: {
-        cacheBackend: "cache",
-        model_list: [record]
-      },
-      initProgressCallback: (p) => {
-        const pct = Math.max(0, Math.min(100, Math.round((p.progress || 0) * 100)));
-        status(language === "ja" ? `AIモデルを準備中… ${pct}%` : `Preparing local AI… ${pct}%`);
+        localEngine = engine;
+        status(language === "ja" ? `端末内AIを使用中（${model.label}）` : `Using on-device AI (${model.label})`);
+        return engine;
+      } catch (err) {
+        errors.push(`${model.id}: ${err?.message || String(err)}`);
       }
-    });
+    }
 
-    localEngine = engine;
-    status(language === "ja" ? "端末内AIを使用中" : "Using on-device AI");
-    return engine;
+    const detail = errors.join(" | ");
+    throw new Error(language === "ja"
+      ? `ローカルAIを起動できませんでした。WebGPUまたはGPUメモリ、モデルのダウンロードを確認してください。詳細: ${detail}`
+      : `The on-device AI could not start. Check WebGPU, GPU memory, and model downloads. Details: ${detail}`);
   })();
   try { return await localEnginePromise; } finally { localEnginePromise = null; }
 }
@@ -215,7 +231,7 @@ async function sendMessage(text) {
       save();
       const status = document.querySelector("#localAiStatus");
       if (status) status.textContent = language === "ja"
-        ? "端末内AIを読み込めなかったため、軽量モードで動作中（設定からWebGPUを確認できます）"
+        ? "端末内AIを起動できなかったため、軽量モードで動作中"
         : "On-device AI could not be loaded; lightweight mode is active";
     } catch (fallbackError) {
       loading.querySelector(".bubble").textContent = language === "ja"
