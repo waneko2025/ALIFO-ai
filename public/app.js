@@ -5,6 +5,39 @@ let currentId = null;
 const $ = s => document.querySelector(s);
 const messages = $("#messages"), empty = $("#empty"), prompt = $("#prompt"), send = $("#send"), generateImageBtn = $("#generateImage"), attachImageBtn = $("#attachImage"), imageInput = $("#imageInput");
 let pendingAttachment = null;
+let localEngine = null;
+let localEnginePromise = null;
+const LOCAL_MODEL_DESKTOP = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+const LOCAL_MODEL_MOBILE = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+
+async function getLocalEngine() {
+  if (localEngine) return localEngine;
+  if (localEnginePromise) return localEnginePromise;
+  localEnginePromise = (async () => {
+    if (!navigator.gpu) throw new Error(language === "ja" ? "このブラウザではWebGPUが利用できません。Chrome/Edgeの最新版を試してください。" : "WebGPU is not available in this browser. Please try the latest Chrome or Edge.");
+    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+    const models = webllm.prebuiltAppConfig?.model_list?.map(m => m.model_id) || [];
+    const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+    const preferred = mobile ? LOCAL_MODEL_MOBILE : LOCAL_MODEL_DESKTOP;
+    const model = models.includes(preferred) ? preferred : (models.includes(LOCAL_MODEL_MOBILE) ? LOCAL_MODEL_MOBILE : models.find(m => /Qwen2.5.*0.5B.*MLC/.test(m)));
+    if (!model) throw new Error(language === "ja" ? "利用できるローカルAIモデルが見つかりませんでした。" : "No compatible local AI model was found.");
+    const status = (text) => {
+      const el = document.querySelector("#localAiStatus");
+      if (el) el.textContent = text;
+    };
+    status(language === "ja" ? "AIモデルを読み込んでいます… 初回は少し時間がかかります" : "Loading the AI model… The first load may take a while");
+    const engine = await webllm.CreateMLCEngine(model, {
+      initProgressCallback: (p) => {
+        const pct = Math.round((p.progress || 0) * 100);
+        status(language === "ja" ? `AIモデルを準備中… ${pct}%` : `Preparing local AI… ${pct}%`);
+      }
+    });
+    localEngine = engine;
+    status(language === "ja" ? "端末内AIを使用中" : "Using on-device AI");
+    return engine;
+  })();
+  try { return await localEnginePromise; } finally { localEnginePromise = null; }
+}
 
 function save() {
   try { localStorage.setItem("alifo_chats", JSON.stringify(chats)); }
@@ -121,13 +154,31 @@ async function sendMessage(text) {
     addMessage("user", text);
   }
   prompt.value = ""; prompt.style.height = "auto"; send.disabled = true;
-  const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
+  const loading = addMessage("ai", language === "ja" ? "AIを準備しています…" : "Preparing AI…", false);
   try {
-    const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: c.messages, language }) });
-    const d = await r.json(); if (!r.ok) throw Error(d.error || "Request failed");
-    loading.querySelector(".bubble").textContent = d.text; c.messages.push({ role: "assistant", content: d.text }); save();
-  } catch (e) { loading.querySelector(".bubble").textContent = language === "ja" ? `エラー: ${e.message}` : `Error: ${e.message}`; }
-  finally { send.disabled = false; prompt.focus(); }
+    const engine = await getLocalEngine();
+    const history = c.messages
+      .filter(m => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+      .slice(-12)
+      .map(m => ({ role: m.role, content: m.content.slice(0, 2000) }));
+    const system = language === "ja"
+      ? "あなたはALIFO AIです。日本語で自然に会話してください。質問されたらまず直接答えてください。ユーザーの質問文をそのまま言い換えるだけの返答は避けてください。『3つ』など数を指定されたら、その数だけ具体的な案を出してください。必要なときだけ短い確認質問をしてください。前の話題に無理につなげず、新しい質問は新しい話題として扱ってください。説明は分かりやすく、親しみやすくしてください。"
+      : "You are ALIFO AI. Reply naturally in English. Answer the user's question directly first. Do not merely restate the user's question. If the user asks for a specific number of items, provide exactly that number of concrete items. Ask a short clarification only when necessary. Do not force a new question into the previous topic; treat it as a new topic when appropriate. Be clear and friendly.";
+    const reply = await engine.chat.completions.create({
+      messages: [{ role: "system", content: system }, ...history],
+      temperature: 0.7,
+      max_tokens: 500
+    });
+    const textOut = reply?.choices?.[0]?.message?.content?.trim();
+    if (!textOut) throw new Error(language === "ja" ? "AIから回答を受け取れませんでした。" : "The AI did not return a response.");
+    loading.querySelector(".bubble").textContent = textOut;
+    c.messages.push({ role: "assistant", content: textOut });
+    save();
+  } catch (e) {
+    loading.querySelector(".bubble").textContent = language === "ja"
+      ? `AIを起動できませんでした。\n${e.message}`
+      : `Could not start the local AI.\n${e.message}`;
+  } finally { send.disabled = false; prompt.focus(); }
 }
 
 function updateAttachmentState() {
