@@ -41,3 +41,8 @@ WebGPU/Transformers.js/WASMの自動起動を停止し、チャットはサー�
 ## v4.8
 - Explicit new-task requests such as 「作文を作って」 no longer inherit the previous conversation context.
 - Added a lightweight response for essay-writing requests.
+
+
+## v4.9
+- New explicit tasks such as 「作文を作って」 no longer inherit the previous topic.
+- Added a dedicated essay-request response.
