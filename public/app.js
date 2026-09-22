@@ -3,7 +3,8 @@ let chats = JSON.parse(localStorage.getItem("alifo_chats") || "[]");
 let currentId = null;
 
 const $ = s => document.querySelector(s);
-const messages = $("#messages"), empty = $("#empty"), prompt = $("#prompt"), send = $("#send"), generateImageBtn = $("#generateImage");
+const messages = $("#messages"), empty = $("#empty"), prompt = $("#prompt"), send = $("#send"), generateImageBtn = $("#generateImage"), attachImageBtn = $("#attachImage"), imageInput = $("#imageInput");
+let pendingAttachment = null;
 
 function save() {
   try { localStorage.setItem("alifo_chats", JSON.stringify(chats)); }
@@ -43,7 +44,11 @@ function renderChat() {
   messages.innerHTML = "";
   if (!c || !c.messages.length) { empty.style.display = "block"; return; }
   empty.style.display = "none";
-  c.messages.forEach(m => m.type === "image" ? addImageMessage(m.src, m.prompt, false) : addMessage(m.role, m.content, false));
+  c.messages.forEach(m => {
+    if (m.type === "image") addImageMessage(m.src, m.prompt, false);
+    else if (m.type === "attachment") addAttachmentMessage(m.src, m.name, m.caption || "", false);
+    else addMessage(m.role, m.content, false);
+  });
   scrollToBottom();
 }
 function scrollToBottom() {
@@ -61,6 +66,21 @@ function addMessage(role, text, store = true) {
   }
   return row;
 }
+function addAttachmentMessage(src, name, caption = "", store = true) {
+  const row = document.createElement("div"); row.className = "message user attachment-message";
+  const wrap = document.createElement("div"); wrap.className = "bubble attachment-bubble";
+  const img = document.createElement("img"); img.className = "attached-image"; img.src = src; img.alt = name || (language === "ja" ? "添付画像" : "Attached image");
+  wrap.appendChild(img);
+  const meta = document.createElement("div"); meta.className = "attachment-meta";
+  const icon = document.createElement("span"); icon.textContent = "📎";
+  const label = document.createElement("span"); label.textContent = name || (language === "ja" ? "画像" : "Image");
+  meta.append(icon, label); wrap.appendChild(meta);
+  if (caption) { const cap = document.createElement("div"); cap.className = "attachment-caption"; cap.textContent = caption; wrap.appendChild(cap); }
+  row.appendChild(wrap); messages.appendChild(row); scrollToBottom();
+  if (store) { const c = ensureChat(); c.messages.push({ role: "user", type: "attachment", src, name, content: caption, caption }); save(); renderHistory(); }
+  return row;
+}
+
 function addImageMessage(src, promptText, store = true) {
   const row = document.createElement("div"); row.className = "message ai";
   const a = document.createElement("div"); a.className = "avatar"; a.textContent = "A"; row.appendChild(a);
@@ -81,7 +101,7 @@ async function generateImage() {
   const text = prompt.value.trim(); if (!text) return;
   ensureChat(); addMessage("user", `🖼 ${text}`);
   prompt.value = ""; prompt.style.height = "auto"; send.disabled = true; generateImageBtn.disabled = true;
-  const loading = addMessage("ai", language === "ja" ? "画像を生成しています…" : "Generating image…", false);
+  const loading = addMessage("ai", language === "ja" ? "画像を生成しています…" : "Generating image…");
   try {
     const r = await fetch("/api/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, size: "1024x1024" }) });
     const d = await r.json(); if (!r.ok) throw Error(d.error || "Image request failed");
@@ -91,7 +111,16 @@ async function generateImage() {
   } finally { send.disabled = false; generateImageBtn.disabled = false; prompt.focus(); }
 }
 async function sendMessage(text) {
-  const c = ensureChat(); addMessage("user", text); prompt.value = ""; prompt.style.height = "auto"; send.disabled = true;
+  const c = ensureChat();
+  const attachment = pendingAttachment;
+  if (attachment) {
+    addAttachmentMessage(attachment.src, attachment.name, text, true);
+    pendingAttachment = null;
+    updateAttachmentState();
+  } else {
+    addMessage("user", text);
+  }
+  prompt.value = ""; prompt.style.height = "auto"; send.disabled = true;
   const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
   try {
     const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: c.messages, language }) });
@@ -101,8 +130,35 @@ async function sendMessage(text) {
   finally { send.disabled = false; prompt.focus(); }
 }
 
-$("#form").onsubmit = e => { e.preventDefault(); const x = prompt.value.trim(); if (x) sendMessage(x); };
+function updateAttachmentState() {
+  if (!attachImageBtn) return;
+  attachImageBtn.classList.toggle("selected", !!pendingAttachment);
+  attachImageBtn.title = pendingAttachment ? (language === "ja" ? `添付中: ${pendingAttachment.name}` : `Attached: ${pendingAttachment.name}`) : (language === "ja" ? "画像を添付" : "Attach image");
+}
+
+function readImageFile(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const maxBytes = 1024 * 1024;
+  if (file.size > maxBytes) {
+    alert(language === "ja" ? "画像は1MB以下にしてください。" : "Please choose an image up to 1MB.");
+    imageInput.value = "";
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    pendingAttachment = { src: reader.result, name: file.name };
+    updateAttachmentState();
+    prompt.placeholder = language === "ja" ? "画像についてメッセージを書く…" : "Write a message about the image…";
+    prompt.focus();
+  };
+  reader.readAsDataURL(file);
+}
+
+$("#form").onsubmit = e => { e.preventDefault(); const x = prompt.value.trim(); if (x || pendingAttachment) sendMessage(x); };
 generateImageBtn.onclick = generateImage;
+attachImageBtn.onclick = () => imageInput.click();
+imageInput.onchange = e => readImageFile(e.target.files?.[0]);
+updateAttachmentState();
 prompt.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } };
 prompt.oninput = () => { prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 140) + "px"; };
 $("#newChat").onclick = newChat;

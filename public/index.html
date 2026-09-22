@@ -33,7 +33,7 @@
         <div class="big-logo">A</div>
         <div class="pill">ALIFO AI</div>
         <h1 data-ja="何をお手伝いしましょう？" data-en="How can I help you?">何をお手伝いしましょう？</h1>
-        <p data-ja="質問、雑談、アイデア、勉強、文章作成、画像生成などを自由に相談できます。" data-en="Ask questions, chat, brainstorm, study, write text, create images, and more.">質問、雑談、アイデア、勉強、文章作成、画像生成などを自由に相談できます。</p>
+        <p data-ja="質問、雑談、アイデア、勉強、文章作成、画像を添付して相談することもできます。質問、雑談、アイデア、勉強、文章作成、画像生成などを自由に相談できます。" data-en="Ask questions, chat, brainstorm, study, write text, create images, and more.">質問、雑談、アイデア、勉強、文章作成、画像を添付して相談することもできます。質問、雑談、アイデア、勉強、文章作成、画像生成などを自由に相談できます。</p>
         <div class="quick">
           <button data-prompt-ja="文化祭でできる面白いアイデアを3つ考えて" data-prompt-en="Give me three interesting project ideas">💡 <span data-ja="アイデアを出す" data-en="Brainstorm">アイデアを出す</span></button>
           <button data-prompt-ja="英語を楽しく勉強する方法を3つ教えて" data-prompt-en="Give me three fun ways to study English">📚 <span data-ja="勉強について聞く" data-en="Study help">勉強について聞く</span></button>
@@ -45,6 +45,8 @@
 
     <div class="composer-wrap">
       <form id="form" class="composer" autocomplete="off">
+        <input id="imageInput" type="file" accept="image/*" hidden>
+        <button id="attachImage" type="button" title="画像を添付" aria-label="画像を添付">📎</button>
         <textarea id="prompt" rows="1" maxlength="2000" data-placeholder-ja="ALIFO AIにメッセージを送る..." data-placeholder-en="Message ALIFO AI..." aria-label="メッセージ"></textarea>
         <button id="generateImage" type="button" title="画像を生成" aria-label="画像を生成">🖼</button>
         <button id="send" type="submit" aria-label="送信">↑</button>

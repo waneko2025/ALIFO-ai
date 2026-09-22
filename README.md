@@ -1,25 +1,32 @@
-# ALIFO AI
+# ALIFO AI v2.0 — APIキーなし版
 
-ALIFO AI is a small public demo web app with:
+ALIFO AIの会話部分を、外部LLM APIなしで自然に返答しやすくした版です。
 
-- Japanese / English UI
-- browser-side chat history
-- built-in rule-based smart chat mode (no OpenAI API key)
-- image generation through the Pollinations image URL service
-- image history, open and save controls
-- mobile-friendly layout
-- basic security headers and lightweight rate limiting
+## v2.0の変更
+- あいさつ・雑談への自然な返答
+- 「もっと詳しく」「短く」「例を出して」などの続き指示
+- 前の会話を少し参照した返答
+- 時計・日本時間への対応
+- 勉強、英語、文章、コード、予定、アイデアなどの話題別返答
+- 「考えています…」という一時表示をチャット履歴へ保存しないよう修正
+- 既存の画像生成機能は維持
+- OpenAI APIキー・外部LLM APIは不要
 
-## Important image-service note
+## 注意
+v2.0はルールベースのスマート会話エンジンです。ChatGPTのような汎用LLMそのものではありません。
 
-The image feature currently uses the Pollinations image URL service. Service availability, limits, models, and authentication requirements can change. ALIFO AI does not guarantee that image generation will remain anonymous or free forever.
+## 起動
+```bash
+npm install
+npm start
+```
 
-Image prompts are sent to the external image service. Do not enter passwords, API keys, or unnecessary private information into image prompts.
+Renderでは既存ALIFO AIとは別サービスとしてデプロイできます。
 
-## Render
 
-- Build command: `npm install`
-- Start command: `npm start`
-- Branch: `main`
-
-No OpenAI API key is required by this version.
+## v2.1 — 画像添付
+- チャット入力欄の 📎 ボタンから画像を添付できます。
+- PNG / JPG / GIF / WebP などの画像ファイルに対応します。
+- 1枚あたり1MBまで。
+- 添付画像はチャット履歴に表示・保存されます。
+- この「APIキーなし」版では画像そのものの内容をAIが解析する機能はまだありません。画像を見せるための添付機能です。

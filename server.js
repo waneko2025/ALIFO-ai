@@ -10,7 +10,6 @@ const PORT = process.env.PORT || 3000;
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
 
-// Basic security headers for a public demo app.
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -29,7 +28,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Small in-memory rate limiter. It resets when the free Render instance restarts.
 const rateBuckets = new Map();
 function rateLimit(key, max, windowMs) {
   const now = Date.now();
@@ -46,96 +44,163 @@ function clientKey(req, scope) {
   return `${scope}:${req.ip || req.socket.remoteAddress || "unknown"}`;
 }
 
-app.use(express.static(path.join(__dirname, "public"), {
-  extensions: ["html"]
-}));
+app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
+
+function textOf(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+function hasRecentAttachment(messages = []) {
+  return messages.slice(-4).some(m => m?.type === "attachment" || m?.attachment);
+}
 
 function lastUser(messages = []) {
-  return messages.filter(m => m.role === "user").at(-1)?.content?.trim() || "";
+  return messages.filter(m => m?.role === "user").at(-1)?.content?.trim() || "";
 }
-function previousUser(messages = []) {
-  const list = messages.filter(m => m.role === "user");
-  return list.length > 1 ? list.at(-2).content.trim() : "";
+function userHistory(messages = []) {
+  return messages.filter(m => m?.role === "user").map(m => textOf(m.content)).filter(Boolean);
 }
 function containsAny(text, words) {
-  return words.some(w => text.toLowerCase().includes(w.toLowerCase()));
+  const t = text.toLowerCase();
+  return words.some(w => t.includes(w.toLowerCase()));
 }
 function numbered(items) {
   return items.map((x, i) => `${i + 1}. ${x}`).join("\n");
 }
+function isQuestion(q) {
+  return /[?？]$/.test(q) || containsAny(q, ["なぜ", "どうして", "どうやって", "とは", "って何", "教えて", "分かる", "わかる"]);
+}
+function isCasual(q) {
+  return containsAny(q, ["やほ", "やっほ", "こんにちは", "こんばんは", "おはよう", "元気", "暇", "話そ", "話そう", "雑談", "眠い", "疲れた", "うれしい", "嬉しい", "悲しい", "すごい", "笑"]);
+}
+function extractTopic(q) {
+  return textOf(q
+    .replace(/^(?:ねえ|ねぇ|ちょっと|えーと|えっと|あの|もしもし)[、,。\s]*/i, "")
+    .replace(/[？?！!]$/g, ""));
+}
+function recentContext(messages) {
+  const u = userHistory(messages);
+  return u.slice(-4);
+}
+
+function followupJapanese(q, history) {
+  const lower = q.toLowerCase();
+  if (containsAny(lower, ["もっと", "詳しく", "くわしく"])) return "もちろん。もう少し具体的にすると、ポイントを分けて順番に説明できるよ。どの部分を詳しくしたいか指定してくれたら、そこに絞るね。";
+  if (containsAny(lower, ["短く", "簡単に", "かんたんに"])) return "OK！短くまとめるね。\n\n要点だけにすると、いちばん大事なのは「目的を1つ決めて、小さく始めること」だよ。";
+  if (containsAny(lower, ["例を", "具体例", "たとえば"])) return "もちろん！たとえば、まず小さな例を1つ作って、うまくいったら少しずつ広げる方法が分かりやすいよ。テーマを教えてくれれば、具体例を3つ出せるよ。";
+  if (containsAny(lower, ["別の", "ほかの", "他の", "もう一つ", "もうひとつ"])) return "いいよ。さっきとは違う方向で考えるね。\n\n・シンプルに始める案\n・遊び心を入れる案\n・友達と一緒にできる案\n\nどの方向がよさそう？";
+  if (containsAny(lower, ["ありがとう", "ありがと", "助かった", "サンキュー"])) return "どういたしまして！😊 またいつでも続きから話してね。";
+  if (containsAny(lower, ["わからない", "分からない", "むずかしい", "難しい"])) return "大丈夫。いきなり全部分かろうとしなくてOKだよ。まず「どこまでは分かるか」を教えてくれたら、そこから一緒に進めよう。";
+  if (history.length >= 2 && containsAny(lower, ["それ", "これ", "じゃあ", "でも", "なら", "ってこと", "つまり"])) {
+    const prev = history.at(-2) || "前の話";
+    return `うん、前の話につなげると「${prev.slice(0, 45)}${prev.length > 45 ? "…" : ""}」の続きとして考えられるよ。\n\nその方向なら、まず一番やりたいことを1つ決めると進めやすいよ。`;
+  }
+  return null;
+}
 
 function smartJapanese(q, history) {
-  const prev = previousUser(history);
-  if (!q) return "質問や相談を入力してください。";
-  if (containsAny(q, ["こんにちは", "こんばんは", "おはよう", "やあ", "hello", "hi"])) {
-    return "こんにちは！ALIFO AIです。\n\n質問、勉強、アイデア、文章作成、プログラミング、雑談など、いろいろ相談してください。\n\nたとえば「文化祭のアイデアを考えて」「数学の勉強方法を教えて」のように自由に入力できます。";
+  if (hasRecentAttachment(history) && !q) return "画像を受け取ったよ！🖼️\n\n今のALIFO AIでは、添付した画像をこの画面に表示して会話に添えられるよ。画像について説明してほしいときは、画像と一緒に質問も送ってね。";
+  if (!q) return "何でも送ってね。😊";
+  const topic = extractTopic(q);
+  const recent = recentContext(history);
+
+  const follow = followupJapanese(q, recent);
+  if (follow) return follow;
+
+  if (containsAny(q, ["やほ", "やっほ", "こんにちは", "こんばんは", "おはよう"])) {
+    return "やほー！😄 今日はどうしたの？\n\n雑談でも、質問でも、何か作る相談でも大丈夫だよ。";
   }
-  if (containsAny(q, ["ありがとう", "サンキュー", "助かった"])) return "どういたしまして！😊\nほかにも聞きたいことがあれば、続けてどうぞ。";
+  if (containsAny(q, ["元気？", "元気", "調子どう"])) return "元気だよ！😄 ALIFO AIはいつでも話せるよ。今日は何について話そっか？";
   if (containsAny(q, ["あなたは誰", "何ができる", "できること", "何できる", "どんなこと"])) {
-    return "ALIFO AIの無料スマートモードです。\n\nできることの例：\n" + numbered([
-      "アイデアを一緒に考える",
-      "勉強方法や問題の考え方を整理する",
-      "文章・作文・発表原稿の下書きを作る",
-      "英語の表現や練習をする",
-      "プログラミングの考え方を説明する",
-      "予定・ToDo・企画を整理する",
-      "日常のちょっとした疑問について話す"
-    ]) + "\n\n完全な生成AIではないため、難しい質問では答えられないこともあります。";
+    return "私はALIFO AIだよ。😊\n\nできることは、たとえばこんな感じ！\n" + numbered([
+      "雑談やちょっとした相談",
+      "アイデア出し・企画づくり",
+      "勉強や宿題の整理",
+      "文章・作文・発表の下書き",
+      "英語の練習や翻訳",
+      "HTML・CSS・JavaScriptなどの相談",
+      "予定やToDoの整理"
+    ]) + "\n\n難しいことは、分からないときに無理に知ったふりをせず、できる範囲を伝えるよ。";
   }
-  if (containsAny(q, ["アイデア", "案を", "企画", "思いつかない"])) {
-    const topic = q.replace(/アイデア|案を|考えて|出して|ください|ほしい|欲しい/g, "").trim() || "新しい企画";
-    return `「${topic}」について考えてみます！\n\n` + numbered([
-      `${topic}を小さく始められるシンプルな案`,
-      `${topic}にゲーム・投票・ランキングなどの参加要素を加える案`,
-      `${topic}を友達と協力して作る案`,
-      `${topic}をSNSやWebで紹介できる形にする案`,
-      `${topic}を1週間だけ試して改善する案`
-    ]) + "\n\n気に入った番号を教えてくれれば、具体的な内容にしていきます。";
+  if (containsAny(q, ["時計", "今何時", "時間わかる", "時間分かる"])) {
+    const now = new Date();
+    const time = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" }).format(now);
+    return `うん、時間の話ならできるよ！🕐\n\n今の日本時間は **${time}** ごろだよ。\n\n「あと何分？」みたいな計算や、予定の時間整理もできるよ。`;
   }
-  if (containsAny(q, ["勉強", "宿題", "学習", "テスト", "覚え方"])) {
-    return "もちろんです。まずは「何を・いつまでに・どこまで」を小さく分けるのがおすすめです。\n\n例：\n" + numbered([
+  if (containsAny(q, ["アイデア", "案を", "企画", "思いつかない", "考えて"])) {
+    const countMatch = q.match(/(?:[0-9０-９]+)\s*(?:つ|個|案)/);
+    const requested = countMatch ? Math.max(1, Math.min(10, Number(countMatch[0].replace(/[^0-9０-９]/g, "").replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xfee0))))) : 3;
+    const clean = topic.replace(/(?:アイデア|案|を|考えて|考える|出して|ください|ほしい|欲しい|教えて|面白い)/g, " ").replace(/\s+/g, " ").trim();
+
+    if (q.includes("文化祭") || q.includes("学園祭")) {
+      const ideas = [
+        "謎解き教室：教室全体を使って、参加者がヒントを探しながらゴールを目指す。最後に記念カードを渡すと盛り上がるよ。",
+        "巨大ガチャ＆くじ引き：文化祭限定の景品を用意して、チケットで挑戦できるゲーム。景品を見える場所に並べると参加しやすい。",
+        "クラス対抗ランキング：来場者の投票で「面白かった企画」「接客がよかった」などを決めて、最後に結果発表する。"
+      ];
+      return `いいね！文化祭なら、実際に準備しやすくて盛り上げやすい案を${requested}つ考えてみたよ。\n\n` + numbered(ideas.slice(0, requested)) + (requested > 3 ? "\n\n※4つ目以降も、予算や教室の広さに合わせて追加できるよ。" : "\n\n気になる案があれば、必要な材料・ルール・当日の流れまで一緒に作れるよ！");
+    }
+
+    const base = clean || "新しい企画";
+    const ideas = [
+      `体験型：参加した人が実際に遊んだり作ったりできる「${base}」にする。`,
+      `ゲーム型：投票・ミッション・ポイントなどを入れて、何度も参加したくなる「${base}」にする。`,
+      `SNS映え型：写真を撮りたくなる仕掛けを入れて、友達と共有しやすい「${base}」にする.`,
+      `協力型：2人以上で協力しないとクリアできない「${base}」にする。`,
+      `ランキング型：参加者の記録や投票を集計して、結果を発表する「${base}」にする。`
+    ];
+    return `いいね！「${base}」の具体的なアイデアを${requested}つ出すね。\n\n` + numbered(ideas.slice(0, requested)) + "\n\n気になる案があれば、そこから具体的な内容まで一緒に作れるよ！";
+  }
+  if (containsAny(q, ["勉強", "宿題", "学習", "テスト", "覚え方", "数学", "英語の勉強"])) {
+    return "もちろん！勉強は「一気に全部」より、小さく区切るとやりやすいよ。\n\n" + numbered([
       "今日やる範囲を1つ決める",
       "20〜25分だけ集中する",
       "分からないところに印を付ける",
       "答えを見る前にもう一度考える",
-      "最後に3行で今日の内容をまとめる"
-    ]) + "\n\n科目や問題を教えてくれれば、もっと具体的に整理できます。";
-  }
-  if (containsAny(q, ["自己紹介", "作文", "文章", "レポート", "スピーチ", "発表原稿"])) {
-    return "文章作成を手伝えます。まず下書きの型を作ると簡単です。\n\n【基本の型】\n① はじめ：テーマ・結論\n② なか：理由や具体例を2〜3個\n③ おわり：まとめ・これから\n\nたとえば「学校で発表する○○について、300字で」のように、テーマ・文字数・用途を教えてください。";
+      "最後に『今日分かったこと』を3つ書く"
+    ]) + "\n\n科目や問題を送ってくれたら、その内容に合わせて一緒に考えるよ。";
   }
   if (containsAny(q, ["英語", "english", "英文", "翻訳", "translate"])) {
-    return "英語の練習もできます。\n\nたとえば、\n・日本語を自然な英語にする\n・英作文をチェックする\n・単語や文法を説明する\n・会話練習をする\n\n翻訳したい文や、練習したいテーマを送ってください。";
+    return "英語もOK！😊\n\n・日本語→自然な英語\n・英作文のチェック\n・単語や文法の説明\n・英会話の練習\n\nたとえば「『今日は楽しかった』を英語で」みたいに、そのまま送ってね。";
   }
   if (containsAny(q, ["プログラミング", "コード", "javascript", "html", "css", "python", "プログラム"])) {
-    return "プログラミングの相談ですね。\n\n「何を作りたいか」「使っている言語」「今どうなっているか」の3つが分かると、整理しやすいです。\n\n例：『HTMLでボタンを押したら文字を変えたい』のように書いてください。";
+    return "プログラミング相談だね！💻\n\n「何を作りたいか」と「今どこで困っているか」を送ってくれれば、順番に整理するよ。\n\nコードを貼ってくれた場合は、どこを直せばいいかも一緒に見られるよ。";
   }
   if (containsAny(q, ["予定", "スケジュール", "todo", "やること", "計画"])) {
-    return "計画を一緒に整理できます。\n\nまず、やることを全部書き出して、次に「今日・今週・あとで」に分けると簡単です。\n\nやることを箇条書きで送ってくれれば、順番を整理します。";
+    return "予定整理もできるよ。\n\nやることをそのまま箇条書きで送ってくれれば、\n① 今すぐやる\n② 今日やる\n③ あとでやる\nのように整理するよ。";
   }
-  if (containsAny(q, ["どうして", "なぜ", "理由", "意味", "とは"]) || q.endsWith("？") || q.endsWith("?")) {
-    return `「${q}」についてですね。\n\n無料スマートモードでは、まず質問を「意味・理由・具体例」の3方向から整理して考えます。\n\n・意味：何を指している？\n・理由：なぜそうなる？\n・具体例：実際にはどうなる？\n\nもう少し具体的な対象や、知りたいポイントを教えてくれれば、さらに絞って説明します。`;
+  if (containsAny(q, ["眠い", "疲れた", "しんどい"])) {
+    return "おつかれさま。😌 無理に頑張り続けなくても大丈夫だよ。\n\nちょっと休んでから続けるのもあり。話したいだけなら、それでも大丈夫だよ。";
   }
-  if (containsAny(q, ["面白い", "暇", "雑談", "話そう", "相談"])) {
-    return "いいですね！😊\n\n雑談でも相談でも大丈夫です。\n\n今の気分に近いものを選ぶなら：\n1. 面白いことを考える\n2. 新しいアイデアを出す\n3. 勉強について話す\n4. ALIFO AIをもっと改良する\n\n番号か、話したいことをそのまま送ってください。";
+  if (isCasual(q)) return "いいね！😄 その話、もう少し聞きたい！\n\n続きでも、全然別の話でもOK。今いちばん話したいことを送ってみて。";
+  if (isQuestion(q)) {
+    return `「${topic}」についてだね。\n\n質問の答えをできるだけ分かりやすく整理するよ。もし「初心者向け」「短く」「具体例つき」など希望があれば、その形に合わせられるよ。\n\n知りたいポイントをもう一言だけ足してくれてもOK！`;
   }
-  if (prev) {
-    return `「${q}」についてですね。\n\n前の話「${prev.slice(0, 40)}${prev.length > 40 ? "…" : ""}」につなげて考えるなら、まず目的を1つに絞ると進めやすいです。\n\n「もっと具体的に」「例を出して」「短くして」「別の案」などと送ってくれれば、その方向に変えます。`;
+  if (recent.length >= 2) {
+    const prev = recent.at(-2);
+    return `なるほど、「${q}」なんだね。😊\n\nさっきの「${prev.slice(0, 35)}${prev.length > 35 ? "…" : ""}」の流れも考えると、もう少し具体的にしていけそう。\n\n「どうしたらいい？」「例を出して」「一緒に作って」みたいに続けてくれれば、その方向で進めるよ。`;
   }
-  return `「${q}」について考えてみます。\n\nこの無料スマートモードでは、質問をテーマ・目的・具体例に分けて整理することができます。\n\nたとえば「もっと詳しく」「例を3つ」「小学生にも分かるように」「短くまとめて」のような追加指示にも対応します。\n\n※この版は外部の生成AI APIを使わないため、どんな質問にも完全に答えられるわけではありません。`;
+  return `なるほど！「${q}」なんだね。😊\n\nもう少し詳しく聞けたら、一緒に考えられるよ。\n\nたとえば「理由を知りたい」「例がほしい」「一緒に作りたい」みたいに続けてみて！`;
 }
 
 function smartEnglish(q, history) {
   const lower = q.toLowerCase();
-  if (!q) return "Type a question or idea and I'll help you organize it.";
-  if (containsAny(lower, ["hello", "hi", "hey"])) return "Hi! I'm ALIFO AI. You can ask about ideas, studying, writing, English, coding, planning, or everyday questions.";
-  if (containsAny(lower, ["idea", "ideas", "brainstorm"])) return "Let's brainstorm!\n\n1. Start with a simple version.\n2. Add a game, poll, or interactive element.\n3. Make a version friends can build together.\n4. Turn it into a small website or project.\n5. Test it for a week and improve it.\n\nTell me the topic and I can make the ideas more specific.";
-  if (containsAny(lower, ["study", "homework", "test", "learn"])) return "A simple study routine is:\n1. Pick one small goal.\n2. Focus for 20–25 minutes.\n3. Mark what you don't understand.\n4. Try again before checking the answer.\n5. Summarize what you learned in three lines.\n\nTell me the subject if you want a more specific plan.";
-  if (containsAny(lower, ["write", "essay", "speech", "introduction", "paragraph"])) return "I can help with writing. A useful structure is:\n1. Opening: topic and main point.\n2. Middle: two or three reasons or examples.\n3. Ending: summary and next step.\n\nSend me the topic, purpose, and approximate length.";
-  if (containsAny(lower, ["code", "coding", "javascript", "html", "css", "python"])) return "I can help organize a coding problem. Tell me what you want to build, which language you use, and what is going wrong. For example: 'I want an HTML button that changes text when clicked.'";
-  if (containsAny(lower, ["plan", "schedule", "todo"])) return "Let's make a simple plan. List everything you need to do, and I can help group it into today, this week, and later.";
-  if (q.endsWith("?") || containsAny(lower, ["why", "what is", "how do"])) return `About “${q}”: try breaking the question into meaning, reason, and example. If you tell me which part you want, I can make the explanation more focused.`;
-  return `I got your message: “${q}”.\n\nThis is ALIFO AI's free smart mode. It can help brainstorm, organize ideas, study, write, practice English, plan tasks, and discuss everyday questions.\n\nTry: “give me three examples”, “make it shorter”, “explain simply”, or “give me another idea”.`;
+  if (hasRecentAttachment(history) && !q) return "I received your image! 🖼️\n\nThe current no-API version can attach and display images in the chat, but it does not analyze the image content yet. Send a question with the image if you want to describe what you need.";
+  if (!q) return "Send me anything. 😊";
+  if (containsAny(lower, ["hello", "hi", "hey"])) return "Hey! 😄 How's it going? We can chat, brainstorm, study, write, code, or just talk.";
+  if (containsAny(lower, ["how are you", "you good"])) return "I'm good! 😄 What do you want to talk about?";
+  if (containsAny(lower, ["what can you do", "who are you"])) return "I'm ALIFO AI. I can help with ideas, studying, writing, English practice, coding, planning, and casual conversation.";
+  if (containsAny(lower, ["clock", "what time", "time now"])) {
+    const now = new Date();
+    const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" }).format(now);
+    return `Sure! 🕐 The current time in Japan is around ${time}.`;
+  }
+  if (containsAny(lower, ["idea", "ideas", "brainstorm"])) return "Let's brainstorm! 😄\n\n1. Start with a simple version.\n2. Add an interactive element.\n3. Make a version friends can build together.\n4. Turn it into a small website or project.\n5. Test it and improve it.\n\nTell me the topic and I'll make the ideas more specific.";
+  if (containsAny(lower, ["study", "homework", "test", "learn"])) return "Sure! A simple study routine is:\n1. Pick one small goal.\n2. Focus for 20–25 minutes.\n3. Mark what you don't understand.\n4. Try again before checking the answer.\n5. Write down three things you learned.\n\nTell me the subject and I can tailor it.";
+  if (containsAny(lower, ["write", "essay", "speech", "paragraph", "translate"])) return "I can help with that. Send me the text or topic, and tell me whether you want it shorter, clearer, more natural, or more formal.";
+  if (containsAny(lower, ["code", "coding", "javascript", "html", "css", "python"])) return "Sure! Tell me what you want to build and what is going wrong. You can paste the code too, and we can work through it step by step.";
+  if (containsAny(lower, ["more", "explain", "example", "another"])) return "Absolutely. Tell me which part you want expanded, and I can explain it with a simple example.";
+  if (/[?]$/.test(q) || containsAny(lower, ["why", "what is", "how do"])) return `Good question: “${q}”. I can explain it simply, give an example, or go deeper. Which style do you want?`;
+  return `Got it — “${q}”. 😊\n\nTell me what you want to do with it, and I'll help you take the next step.`;
 }
 
 function smartReply(messages, language) {
@@ -150,8 +215,7 @@ app.post("/api/chat", (req, res) => {
   try {
     const { messages = [], language = "ja" } = req.body || {};
     const safeMessages = Array.isArray(messages) ? messages.slice(-30) : [];
-    const text = smartReply(safeMessages, language === "en" ? "en" : "ja");
-    res.json({ text });
+    res.json({ text: smartReply(safeMessages, language === "en" ? "en" : "ja") });
   } catch {
     res.status(400).json({ error: "メッセージを処理できませんでした。" });
   }
@@ -165,20 +229,11 @@ app.post("/api/image", (req, res) => {
     const { prompt = "", size = "1024x1024" } = req.body || {};
     const cleanPrompt = String(prompt).trim().slice(0, 1000);
     if (!cleanPrompt) return res.status(400).json({ error: "画像の説明を入力してください。" });
-
     const [width, height] = String(size).split("x").map(Number);
     const safeWidth = Number.isFinite(width) && width >= 256 && width <= 1536 ? width : 1024;
     const safeHeight = Number.isFinite(height) && height >= 256 && height <= 1536 ? height : 1024;
     const seed = Math.floor(Math.random() * 2147483647);
-    const params = new URLSearchParams({
-      model: "flux",
-      width: String(safeWidth),
-      height: String(safeHeight),
-      nologo: "true",
-      private: "true",
-      safe: "true",
-      seed: String(seed)
-    });
+    const params = new URLSearchParams({ model: "flux", width: String(safeWidth), height: String(safeHeight), nologo: "true", private: "true", safe: "true", seed: String(seed) });
     const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?${params.toString()}`;
     res.json({ image: imageUrl, provider: "Pollinations" });
   } catch (error) {
@@ -187,14 +242,11 @@ app.post("/api/image", (req, res) => {
   }
 });
 
-// Download proxy. Only the exact Pollinations image host is allowed.
 app.get("/api/image-download", async (req, res) => {
   try {
     const raw = String(req.query.url || "");
     const url = new URL(raw);
-    if (url.protocol !== "https:" || url.hostname !== "image.pollinations.ai") {
-      return res.status(400).send("Invalid image URL");
-    }
+    if (url.protocol !== "https:" || url.hostname !== "image.pollinations.ai") return res.status(400).send("Invalid image URL");
     const upstream = await fetch(url, { redirect: "follow" });
     if (!upstream.ok) return res.status(502).send("Image service unavailable");
     const contentType = upstream.headers.get("content-type") || "";
@@ -208,11 +260,8 @@ app.get("/api/image-download", async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="alifo-ai-image.${ext}"`);
     res.setHeader("Cache-Control", "no-store");
     res.send(buffer);
-  } catch {
-    res.status(400).send("Unable to download image");
-  }
+  } catch { res.status(400).send("Unable to download image"); }
 });
 
 app.get("/{*splat}", (_, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-
-app.listen(PORT, () => console.log(`ALIFO AI running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`ALIFO AI v2.0 running on http://localhost:${PORT}`));

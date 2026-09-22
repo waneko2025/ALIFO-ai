@@ -9,3 +9,15 @@
 .modal{position:fixed;inset:0;background:rgba(20,22,30,.35);display:grid;place-items:center;z-index:30;padding:20px}.modal.hidden{display:none}.modal-box{width:min(430px,100%);background:#fff;border-radius:22px;padding:22px;box-shadow:var(--shadow)}.modal-head{display:flex;justify-content:space-between;align-items:center}.modal-box label{display:block;margin:20px 0}.modal-box select{width:100%;margin-top:8px;padding:11px;border:1px solid var(--line);border-radius:10px}.danger{width:100%;border:1px solid #f0caca;color:#c43f3f;background:#fff;padding:11px;border-radius:10px;cursor:pointer}.mobile-close{display:none}
 @media(max-width:760px){.sidebar{position:fixed;left:-290px;top:0;bottom:0;transition:.2s;box-shadow:var(--shadow)}.sidebar.open{left:0}.mobile-close{display:block}.menu{display:block}.composer-wrap{left:0;padding:12px 10px 10px}.chat{padding:22px 12px 145px}.empty{margin-top:7vh}.empty h1{font-size:32px}.empty p{font-size:14px}.quick{display:grid;grid-template-columns:1fr}.quick button{width:100%}.bubble{max-width:88%}.image-bubble{max-width:92%}.header{padding:0 12px}.language{padding:8px 13px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+/* Image attachment */
+#attachImage.selected { opacity: 1; outline: 2px solid rgba(91,92,240,.35); }
+.attachment-bubble { max-width: min(360px, 78vw); padding: 8px; }
+.attached-image { display:block; width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#f3f4f6; }
+.attachment-meta { display:flex; align-items:center; gap:7px; margin:8px 4px 2px; font-size:12px; opacity:.75; overflow:hidden; }
+.attachment-meta span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.attachment-caption { margin:7px 4px 2px; white-space:pre-wrap; word-break:break-word; }
+@media (max-width: 600px) {
+  .attachment-bubble { max-width: 84vw; }
+  .attached-image { max-height:300px; }
+}
