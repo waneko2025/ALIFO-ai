@@ -64,3 +64,8 @@ ALIFO AIのチャットをPuter.js経由の外部AIに変更しました。サ�
 - Puterの無料枠・利用条件・レート制限はPuter側の最新仕様に従います
 
 参考: https://docs.puter.com/AI/ および https://docs.puter.com/user-pays-model/
+
+
+### v5.3
+- ヘッダーに「外部AI接続中」ステータスを表示します。
+- Puter.js の利用可能状態・接続中・エラーを日本語/英語で表示します。

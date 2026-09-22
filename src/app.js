@@ -82,6 +82,33 @@ function generateInWorker(worker, payload, onChunk) {
   });
 }
 
+function setExternalAiStatus(state) {
+  const badge = document.querySelector("#externalAiBadge");
+  const text = document.querySelector("#externalAiBadgeText");
+  const footer = document.querySelector("#localAiStatus");
+  if (!badge || !text) return;
+  badge.classList.remove("connected", "connecting", "error");
+  const labels = {
+    ja: { connected: "外部AI接続中", connecting: "外部AIに接続中…", error: "外部AI接続エラー" },
+    en: { connected: "External AI connected", connecting: "Connecting to external AI…", error: "External AI connection error" }
+  };
+  const label = labels[language]?.[state] || labels.ja[state] || labels.ja.connecting;
+  badge.classList.add(state);
+  text.textContent = label;
+  if (footer) footer.textContent = language === "ja"
+    ? (state === "connected" ? "外部AI（Puter）で接続中・APIキー不要" : state === "error" ? "外部AIに接続できません。再読み込みしてください。" : "外部AI（Puter）に接続中…")
+    : (state === "connected" ? "External AI (Puter) connected · no API key required" : state === "error" ? "Could not connect to external AI. Please reload." : "Connecting to external AI (Puter)…");
+}
+
+function checkExternalAi() {
+  if (window.puter?.ai?.chat) {
+    setExternalAiStatus("connected");
+    return true;
+  }
+  setExternalAiStatus("connecting");
+  return false;
+}
+
 function save() {
   try { localStorage.setItem("alifo_chats", JSON.stringify(chats)); }
   catch { /* keep the current session usable if localStorage is full */ }
@@ -95,6 +122,7 @@ function applyLanguage() {
   $("#language").textContent = language === "ja" ? "English" : "日本語";
   $("#settingLanguage").value = language;
   renderHistory();
+  if (window.puter?.ai?.chat) setExternalAiStatus("connected");
 }
 function newChat() {
   currentId = Date.now().toString();
@@ -183,6 +211,7 @@ async function generateImage() {
     const d = await r.json(); if (!r.ok) throw Error(d.error || "Image request failed");
     loading.remove(); addImageMessage(d.image, text, true);
   } catch (e) {
+    setExternalAiStatus("error");
     loading.querySelector(".bubble").textContent = language === "ja" ? `画像生成エラー: ${e.message}` : `Image error: ${e.message}`;
   } finally { send.disabled = false; generateImageBtn.disabled = false; prompt.focus(); }
 }
@@ -204,6 +233,7 @@ async function sendMessage(text) {
   prompt.value = "";
   prompt.style.height = "auto"; send.disabled = true;
   const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
+  setExternalAiStatus("connecting");
   try {
     // API-key-free cloud AI: Puter.js handles the user's authentication/session.
     // The site never stores an OpenAI/Pollinations API key.
@@ -228,10 +258,7 @@ async function sendMessage(text) {
     loading.querySelector(".bubble").textContent = answer;
     c.messages.push({ role: "assistant", content: answer });
     save();
-    const status = document.querySelector("#localAiStatus");
-    if (status) status.textContent = language === "ja"
-      ? "外部AI（Puter）で動作中・APIキー不要"
-      : "External AI (Puter) active · no API key required";
+    setExternalAiStatus("connected");
   } catch (e) {
     loading.querySelector(".bubble").textContent = language === "ja"
       ? `回答できませんでした。\n${e.message}`
@@ -345,6 +372,8 @@ document.querySelectorAll(".quick button").forEach(b => b.onclick = () => sendMe
 
 if (!chats.length) newChat(); else { currentId = chats[0].id; renderChat(); renderHistory(); }
 applyLanguage();
+checkExternalAi();
+const externalAiTimer = setInterval(() => { if (checkExternalAi()) clearInterval(externalAiTimer); }, 1200);
 
 window.addEventListener("error", (event) => {
   const status = document.querySelector("#localAiStatus");
