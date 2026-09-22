@@ -254,9 +254,28 @@ function stripWikiMarkup(text = "") {
 
 function extractFactualTopic(q = "") {
   let topic = textOf(q)
-    .replace(/^(?:ねえ|ねぇ|ちょっと|教えて|説明して|簡単に|わかりやすく|小学生にもわかるように|小学生にも分かるように)[、,。\s]*/i, "")
-    .replace(/(?:について)?(?:教えて|説明して|解説して|知りたい|とは何|って何|ってなに|とは|何ですか|何？|何\?)?[？?！!]?$/i, "")
+    .replace(/^(?:ねえ|ねぇ|ちょっと|えーと|えっと|あの|もしもし)[、,。\s]*/i, "")
+    .replace(/[？?！!]$/g, "")
     .trim();
+
+  // Prefer the actual subject before 「について」. This prevents a full
+  // instruction such as 「富士山について、小学生にも分かるように説明して」
+  // from being sent to Wikipedia as one long search query (which could return
+  // an unrelated page such as 静岡県).
+  const about = topic.match(/^(.+?)\s*について(?:[、,。\s]|$)/);
+  if (about?.[1]) topic = about[1].trim();
+
+  // Remove common request wording when 「について」 was not used.
+  topic = topic
+    .replace(/^(?:教えて|説明して|解説して|知りたい)\s*/i, "")
+    .replace(/(?:教えて|説明して|解説して|知りたい|とは何|って何|ってなに|とは|何ですか|何でしょう|何？|何\?)$/i, "")
+    .trim();
+
+  // Strip audience/style clauses that are not part of the factual subject.
+  topic = topic
+    .replace(/[、,]\s*(?:小学生|子ども|子供|初心者)[^、,。]*?(?:ように|向け|向けに|にも)?$/i, "")
+    .trim();
+
   if (!topic || topic.length > 80) return "";
   return topic;
 }
