@@ -241,19 +241,96 @@ function smartEnglish(q, history) {
   return `Got it — “${q}”. 😊\n\nTell me what you want to do with it, and I'll help you take the next step.`;
 }
 
+
+
+// Lightweight server-side knowledge engine: no WebGPU, no API key, no local model.
+// It uses Wikipedia's public API for factual topics, then formats the result for the user's requested style.
+function stripWikiMarkup(text = "") {
+  return String(text)
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractFactualTopic(q = "") {
+  let topic = textOf(q)
+    .replace(/^(?:ねえ|ねぇ|ちょっと|教えて|説明して|簡単に|わかりやすく|小学生にもわかるように|小学生にも分かるように)[、,。\s]*/i, "")
+    .replace(/(?:について)?(?:教えて|説明して|解説して|知りたい|とは何|って何|ってなに|とは|何ですか|何？|何\?)?[？?！!]?$/i, "")
+    .trim();
+  if (!topic || topic.length > 80) return "";
+  return topic;
+}
+
+function wantsSimple(q = "") {
+  return containsAny(q, ["小学生", "子ども", "子供", "簡単", "かんたん", "わかりやす", "分かりやす", "初心者"]);
+}
+
+function formatWikiAnswer(topic, summary, language, simple) {
+  const clean = stripWikiMarkup(summary).replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  if (language === "en") {
+    const lead = simple ? `Here is a simple explanation of ${topic}:` : `Here is a quick explanation of ${topic}:`;
+    return `${lead}\n\n${clean.slice(0, 900)}\n\nIf you want, I can also explain it with examples or in more detail.`;
+  }
+  const lead = simple ? `「${topic}」を、できるだけ分かりやすく説明するね。` : `「${topic}」について説明するね。`;
+  const body = clean.slice(0, 900);
+  return `${lead}\n\n${body}\n\nもっと詳しく知りたいところがあれば、そこを中心に説明できるよ。`;
+}
+
+async function fetchWikiSummary(topic, language = "ja") {
+  const lang = language === "en" ? "en" : "ja";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4500);
+  try {
+    const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(topic)}&utf8=1&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl, { signal: controller.signal, headers: { "User-Agent": "ALIFO-AI/4.5 (educational chatbot)" } });
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json();
+    const title = searchData?.query?.search?.[0]?.title;
+    if (!title) return null;
+    const summaryUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+    const summaryRes = await fetch(summaryUrl, { signal: controller.signal, headers: { "User-Agent": "ALIFO-AI/4.5 (educational chatbot)" } });
+    if (!summaryRes.ok) return null;
+    const data = await summaryRes.json();
+    return { title: data.title || title, extract: data.extract || "", url: data.content_urls?.desktop?.page || "" };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function knowledgeReply(messages, language) {
+  const q = lastUser(messages);
+  if (!q || !isQuestion(q)) return null;
+  if (containsAny(q, ["今何時", "今の時間", "今日の日付", "今日は何日"])) return null;
+  const topic = extractFactualTopic(q);
+  if (!topic) return null;
+  // Avoid sending clearly conversational/creative prompts to Wikipedia.
+  if (containsAny(topic, ["考えて", "作って", "書いて", "作成", "相談", "どうしたら", "おすすめ", "アイデア"])) return null;
+  const result = await fetchWikiSummary(topic, language);
+  if (!result?.extract) return null;
+  const answer = formatWikiAnswer(result.title || topic, result.extract, language, wantsSimple(q));
+  if (!answer) return null;
+  return { text: answer, source: result.url || null, title: result.title || topic };
+}
+
 function smartReply(messages, language) {
   const q = lastUser(messages);
   return language === "en" ? smartEnglish(q, messages) : smartJapanese(q, messages);
 }
 
-app.post("/api/chat", (req, res) => {
+app.post("/api/chat", async (req, res) => {
   if (!rateLimit(clientKey(req, "chat"), 60, 60_000)) {
     return res.status(429).json({ error: "しばらく待ってからもう一度お試しください。" });
   }
   try {
     const { messages = [], language = "ja" } = req.body || {};
     const safeMessages = Array.isArray(messages) ? messages.slice(-30) : [];
-    res.json({ text: smartReply(safeMessages, language === "en" ? "en" : "ja") });
+    const lang = language === "en" ? "en" : "ja";
+    const knowledge = await knowledgeReply(safeMessages, lang);
+    if (knowledge) return res.json({ text: knowledge.text, source: knowledge.source, sourceTitle: knowledge.title, mode: "knowledge" });
+    res.json({ text: smartReply(safeMessages, lang), mode: "stable" });
   } catch {
     res.status(400).json({ error: "メッセージを処理できませんでした。" });
   }

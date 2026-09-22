@@ -20,3 +20,9 @@ WebGPU/Transformers.js/WASMの自動起動を停止し、チャットはサー�
 - Fixed missing application state initialization that caused chat history and messages to disappear.
 - Preserves `alifo_chats` localStorage data when valid.
 - Stable server chat mode; no WebGPU/CPU model initialization.
+
+## v4.5
+- Added a lightweight server-side factual answer engine using Wikipedia's public API.
+- Keeps the stable no-WebGPU chat mode as a fallback.
+- No API key and no local model are required.
+- Existing chat history, settings, image generation, and language switching remain in place.
