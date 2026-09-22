@@ -302,4 +302,4 @@ app.get("/api/image-download", async (req, res) => {
 });
 
 app.get("/{*splat}", (_, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
-app.listen(PORT, () => console.log(`ALIFO AI v3.2 running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`ALIFO AI v3.4 running on http://localhost:${PORT}`));

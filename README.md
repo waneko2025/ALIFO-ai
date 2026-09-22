@@ -22,3 +22,9 @@ WebLLM model/WASM download hosts are allowed in the Content-Security-Policy, inc
 
 ## v3.3
 SmolLM2 360M q4f32_1 を先に試し、失敗時にLlama 3.2 1Bへフォールバック。初回モデル準備の進捗と12分タイムアウトを表示します。
+
+
+## v3.4
+- WebLLMの公式 `prebuiltAppConfig` を明示的に使用。
+- Llama 3.2 1Bを先に使用し、初期化できない場合はSmolLM2 360Mへフォールバック。
+- 生成パラメータを安定寄りに調整し、記号だけの異常出力を検出した場合は軽量モードへ切り替えます。
