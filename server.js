@@ -292,7 +292,13 @@ function formatWikiAnswer(topic, summary, language, simple) {
     return `${lead}\n\n${clean.slice(0, 900)}\n\nIf you want, I can also explain it with examples or in more detail.`;
   }
   const lead = simple ? `「${topic}」を、できるだけ分かりやすく説明するね。` : `「${topic}」について説明するね。`;
-  const body = clean.slice(0, 900);
+  let body = clean.slice(0, simple ? 650 : 900);
+  if (simple) {
+    body = body
+      .replace(/。/g, "。\n")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+  }
   return `${lead}\n\n${body}\n\nもっと詳しく知りたいところがあれば、そこを中心に説明できるよ。`;
 }
 
@@ -319,10 +325,27 @@ async function fetchWikiSummary(topic, language = "ja") {
   }
 }
 
+function looksLikeShortTopic(q) {
+  const t = textOf(q).trim();
+  if (!t || t.length > 24) return false;
+  if (/[?？]$/.test(t)) return false;
+  if (containsAny(t, [
+    "ありがとう", "ありがと", "どういたしまして", "こんにちは", "こんばんは", "おはよう",
+    "やほ", "やっほ", "元気", "暇", "話そ", "話そう", "それ", "これ", "じゃあ",
+    "でも", "なら", "つまり", "もっと", "詳しく", "くわしく", "短く", "簡単に",
+    "例を", "具体例", "別の", "ほかの", "他の", "もう一つ", "もうひとつ"
+  ])) return false;
+  return /^[^、。！？!?]{1,24}$/.test(t);
+}
+
 async function knowledgeReply(messages, language) {
   const q = lastUser(messages);
-  if (!q || !isQuestion(q)) return null;
+  if (!q) return null;
   if (containsAny(q, ["今何時", "今の時間", "今日の日付", "今日は何日"])) return null;
+  // A short noun/topic such as 「お金」「火星」「Python」 is often a new
+  // topic, even when it follows another conversation. Treat it as a factual
+  // lookup instead of replying with a generic continuation message.
+  if (!isQuestion(q) && !looksLikeShortTopic(q)) return null;
   const topic = extractFactualTopic(q);
   if (!topic) return null;
   // Avoid sending clearly conversational/creative prompts to Wikipedia.
