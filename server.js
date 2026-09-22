@@ -16,7 +16,7 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader("Content-Security-Policy", [
     "default-src 'self'",
-    "script-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https://image.pollinations.ai https://huggingface.co https://*.huggingface.co",
     "connect-src 'self' https://image.pollinations.ai https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://github.com https://objects.githubusercontent.com",
@@ -301,5 +301,5 @@ app.get("/api/image-download", async (req, res) => {
   } catch { res.status(400).send("Unable to download image"); }
 });
 
-app.get("/{*splat}", (_, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.listen(PORT, () => console.log(`ALIFO AI v2.0 running on http://localhost:${PORT}`));
+app.get("/{*splat}", (_, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
+app.listen(PORT, () => console.log(`ALIFO AI v3.2 running on http://localhost:${PORT}`));

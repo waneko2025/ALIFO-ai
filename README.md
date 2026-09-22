@@ -13,3 +13,8 @@ Start Command: `npm start`
 
 ## v3.1
 WebLLM model/WASM download hosts are allowed in the Content-Security-Policy, including raw.githubusercontent.com, github.com, and objects.githubusercontent.com.
+
+
+## v3.2 修正
+- WebAssembly実行に必要な `wasm-unsafe-eval` をCSPへ追加
+- SPAフォールバックも `dist/index.html` を配信
