@@ -18,3 +18,7 @@ WebLLM model/WASM download hosts are allowed in the Content-Security-Policy, inc
 ## v3.2 修正
 - WebAssembly実行に必要な `wasm-unsafe-eval` をCSPへ追加
 - SPAフォールバックも `dist/index.html` を配信
+
+
+## v3.3
+SmolLM2 360M q4f32_1 を先に試し、失敗時にLlama 3.2 1Bへフォールバック。初回モデル準備の進捗と12分タイムアウトを表示します。

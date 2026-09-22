@@ -10,6 +10,11 @@ let localEngine = null;
 let localEnginePromise = null;
 const LOCAL_MODELS = [
   {
+    id: "SmolLM2-360M-Instruct-q4f32_1-MLC",
+    label: "SmolLM2 360M",
+    approx: "約580MB"
+  },
+  {
     id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
     label: "Llama 3.2 1B",
     approx: "約900MB"
@@ -48,20 +53,27 @@ async function getLocalEngine() {
 
         // Keep the configuration minimal and follow WebLLM's documented prebuilt-model path.
         // A smaller second model is used automatically if the first model cannot initialize.
-        const engine = await CreateMLCEngine(model.id, {
+        status(language === "ja"
+          ? `${model.label}を準備中… 0%（初回はモデルをダウンロードします。画面を閉じずに待ってください）`
+          : `Preparing ${model.label}… 0% (first run downloads the model; keep this page open)`);
+        const engine = await Promise.race([
+          CreateMLCEngine(model.id, {
           initProgressCallback: (p) => {
             const pct = Math.max(0, Math.min(100, Math.round((p.progress || 0) * 100)));
+            const phase = String(p.text || "").trim();
             status(language === "ja"
-              ? `${model.label}を準備中… ${pct}%`
-              : `Preparing ${model.label}… ${pct}%`);
+              ? `${model.label}を準備中… ${pct}%${phase ? ` — ${phase}` : ""}`
+              : `Preparing ${model.label}… ${pct}%${phase ? ` — ${phase}` : ""}`);
           }
-        });
+        }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("MODEL_INIT_TIMEOUT")), 12 * 60 * 1000))
+        ]);
 
         localEngine = engine;
         status(language === "ja" ? `端末内AIを使用中（${model.label}）` : `Using on-device AI (${model.label})`);
         return engine;
       } catch (err) {
-        errors.push(`${model.id}: ${err?.message || String(err)}`);
+        errors.push(`${model.id}: ${err?.message === "MODEL_INIT_TIMEOUT" ? "12分以内にモデルの準備が完了しませんでした" : (err?.message || String(err))}`);
       }
     }
 
