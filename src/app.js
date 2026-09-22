@@ -1,10 +1,15 @@
-import { pipeline, TextStreamer, env } from "@huggingface/transformers";
-
-// ALIFO AI runs its local language model on CPU/WASM only in this mode.
-// WebGPU is intentionally not required.
-env.allowRemoteModels = true;
-env.allowLocalModels = false;
-env.useBrowserCache = true;
+// CPU/WASM mode: load Transformers.js from a CDN at runtime so the server build
+// does not need the package installed. WebGPU is never requested.
+let transformersModule = null;
+async function getTransformers() {
+  if (!transformersModule) {
+    transformersModule = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm");
+    transformersModule.env.allowRemoteModels = true;
+    transformersModule.env.allowLocalModels = false;
+    transformersModule.env.useBrowserCache = true;
+  }
+  return transformersModule;
+}
 let language = localStorage.getItem("alifo_lang") || "ja";
 let chats = JSON.parse(localStorage.getItem("alifo_chats") || "[]");
 let currentId = null;
@@ -52,8 +57,8 @@ async function getLocalEngine() {
     };
 
     try {
-      // Transformers.js defaults to WASM/CPU in the browser. Explicitly selecting
-      // WASM means this path does not depend on navigator.gpu/requestAdapter().
+      // Explicitly select WASM/CPU. This path never calls navigator.gpu.
+      const { pipeline } = await getTransformers();
       const generator = await pipeline(
         "text-generation",
         LOCAL_MODEL.id,
@@ -210,6 +215,7 @@ async function sendMessage(text) {
       ? "あなたはALIFO AIです。日本語で自然に、短く分かりやすく答えてください。ユーザーの質問を繰り返したり、質問文を言い換えるだけの返答はしないでください。まず答えを直接書き、必要なら理由や具体例を続けてください。数を指定されたらその数だけ答えてください。分からないことは推測せず、分からないと伝えてください。新しい質問は新しい話題として扱ってください。"
       : "You are ALIFO AI. Reply naturally in English. Answer the user's question directly first. Do not merely restate the user's question. If the user asks for a specific number of items, provide exactly that number of concrete items. Ask a short clarification only when necessary. Do not force a new question into the previous topic; treat it as a new topic when appropriate. Be clear and friendly.";
     let textOut = "";
+    const { TextStreamer } = await getTransformers();
     const streamer = new TextStreamer(engine.tokenizer, {
       skip_prompt: true,
       skip_special_tokens: true,

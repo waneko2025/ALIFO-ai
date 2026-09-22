@@ -46,3 +46,8 @@ SmolLM2 360M q4f32_1 を先に試し、失敗時にLlama 3.2 1Bへフォール�
 ALIFO AI v3.7 does not require WebGPU for text chat. It uses Hugging Face Transformers.js with ONNX Runtime Web and explicitly selects the WASM/CPU backend. The first chat downloads and caches the Qwen2.5-0.5B-Instruct ONNX model; later sessions can reuse the browser cache. WebGPU is not required for text chat.
 
 The model is served from the Hugging Face Hub and is licensed separately; see its model card for details.
+
+
+## v3.8 CPU/WASM mode
+
+This version does not require WebGPU or the `@huggingface/transformers` npm package at build time. Transformers.js 3.8.1 is loaded from jsDelivr in the browser and inference is explicitly set to WASM/CPU. The model is downloaded from Hugging Face and cached by the browser.
