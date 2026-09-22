@@ -51,3 +51,11 @@ The model is served from the Hugging Face Hub and is licensed separately; see it
 ## v3.8 CPU/WASM mode
 
 This version does not require WebGPU or the `@huggingface/transformers` npm package at build time. Transformers.js 3.8.1 is loaded from jsDelivr in the browser and inference is explicitly set to WASM/CPU. The model is downloaded from Hugging Face and cached by the browser.
+
+
+## v3.9 CPU/WASM stable
+- Text chat is explicitly fixed to Transformers.js + ONNX Runtime Web WASM/CPU.
+- No WebGPU adapter is requested by the chat path.
+- Uses onnx-community/Qwen2.5-0.5B-Instruct with q4 weights.
+- Adds CPU/WASM runtime diagnostics for WebAssembly, browser storage, network, and Transformers.js loading.
+- Model loading has a 15-minute timeout and the existing server lightweight fallback keeps chat usable if local inference cannot start.

@@ -22,7 +22,7 @@ let localEnginePromise = null;
 const LOCAL_MODEL = {
   id: "onnx-community/Qwen2.5-0.5B-Instruct",
   label: "Qwen2.5 0.5B",
-  approx: "約483MB（q4f16）"
+  approx: "約786MB（q4）"
 };
 
 async function getLocalEngine() {
@@ -59,7 +59,7 @@ async function getLocalEngine() {
     try {
       // Explicitly select WASM/CPU. This path never calls navigator.gpu.
       const { pipeline } = await getTransformers();
-      const generator = await pipeline(
+      const loadPromise = pipeline(
         "text-generation",
         LOCAL_MODEL.id,
         {
@@ -68,6 +68,10 @@ async function getLocalEngine() {
           progress_callback
         }
       );
+      const generator = await Promise.race([
+        loadPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(language === "ja" ? "モデルの準備が15分を超えました。ネットワークまたは保存容量を確認してください。" : "Model preparation exceeded 15 minutes. Check network access or browser storage.")), 15 * 60 * 1000))
+      ]);
 
       localEngine = generator;
       status(language === "ja"
@@ -275,7 +279,7 @@ async function sendMessage(text) {
   } finally { send.disabled = false; prompt.focus(); }
 }
 
-async function runWebGPUDiagnostic() {
+async function runRuntimeDiagnostic() {
   const box = document.querySelector("#diagnosticResult");
   if (!box) return;
   box.classList.remove("hidden");
@@ -286,53 +290,45 @@ async function runWebGPUDiagnostic() {
   let overall = "ok";
 
   add(language === "ja" ? "安全な接続" : "Secure context", bool(window.isSecureContext));
-  add("navigator.gpu", bool(!!navigator.gpu));
   add(language === "ja" ? "ブラウザ" : "Browser", navigator.userAgent);
 
   if (!window.isSecureContext) overall = "warn";
-  if (!navigator.gpu) {
-    overall = "error";
-    lines.push(language === "ja"
-      ? "→ WebGPU APIがブラウザから見えていません。"
-      : "→ The WebGPU API is not exposed by this browser.");
-  } else {
-    const adapterResults = [];
-    for (const powerPreference of ["high-performance", "low-power"]) {
-      try {
-        const adapter = await navigator.gpu.requestAdapter({ powerPreference });
-        if (!adapter) {
-          adapterResults.push(`${powerPreference}: ${language === "ja" ? "取得できない" : "not available"}`);
-          continue;
-        }
-        const info = adapter.info || {};
-        adapterResults.push(`${powerPreference}: OK`);
-        add(language === "ja" ? `GPU (${powerPreference})` : `GPU (${powerPreference})`, [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(" / ") || "WebGPU adapter");
-        add(language === "ja" ? `最大ストレージバッファ (${powerPreference})` : `Max storage buffer (${powerPreference})`, String(adapter.limits?.maxStorageBufferBindingSize ?? "unknown"));
-        add(language === "ja" ? `最大バッファ (${powerPreference})` : `Max buffer (${powerPreference})`, String(adapter.limits?.maxBufferSize ?? "unknown"));
-        add(language === "ja" ? `shader-f16 (${powerPreference})` : `shader-f16 (${powerPreference})`, bool(adapter.features?.has?.("shader-f16")));
-      } catch (err) {
-        adapterResults.push(`${powerPreference}: ERROR ${err?.message || err}`);
-      }
+
+  try {
+    const storage = navigator.storage;
+    if (storage?.estimate) {
+      const estimate = await storage.estimate();
+      const used = Number(estimate.usage || 0);
+      const quota = Number(estimate.quota || 0);
+      add(language === "ja" ? "ブラウザ保存容量" : "Browser storage", quota ? `${Math.round(used / 1024 / 1024)}MB / ${Math.round(quota / 1024 / 1024)}MB` : "unknown");
     }
-    add(language === "ja" ? "アダプター取得" : "Adapter request", adapterResults.join(" | "));
-    const hasAdapter = adapterResults.some(x => x.endsWith(": OK"));
-    if (!hasAdapter) {
-      overall = "error";
-      lines.push(language === "ja"
-        ? "→ WebGPUは有効ですが、ALIFO AIからGPUアダプターを取得できません。GPUドライバーまたはブラウザ側の制限を確認してください。"
-        : "→ WebGPU is enabled, but ALIFO AI could not obtain a GPU adapter. Check the GPU driver or browser restrictions.");
-    }
+    add(language === "ja" ? "WASM対応" : "WASM support", typeof WebAssembly !== "undefined" ? "OK" : "NG");
+    add(language === "ja" ? "SharedArrayBuffer" : "SharedArrayBuffer", typeof SharedArrayBuffer !== "undefined" ? "利用可能" : "利用不可");
+    const online = typeof navigator.onLine === "boolean" ? navigator.onLine : null;
+    add(language === "ja" ? "ネットワーク接続" : "Network", online === null ? "unknown" : bool(online));
+  } catch (err) {
+    overall = "warn";
+    add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
   }
 
   try {
+    const tf = await getTransformers();
+    add(language === "ja" ? "Transformers.js" : "Transformers.js", "3.8.1 / loaded");
+    add(language === "ja" ? "モデル" : "Model", LOCAL_MODEL.id);
+    add(language === "ja" ? "実行方式" : "Execution", "WASM / CPU");
+  } catch (err) {
+    overall = "error";
+    add(language === "ja" ? "Transformers.js読み込み" : "Transformers.js load", `ERROR ${err?.message || err}`);
+  }
+  try {
     const origin = location.origin;
     add(language === "ja" ? "ALIFO AIのオリジン" : "ALIFO AI origin", origin);
-    add(language === "ja" ? "WebGPU診断時刻" : "Diagnostic time", new Date().toISOString());
+    add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
   } catch {}
 
   add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Transformers.js / ONNX Runtime Web / WASM (CPU)");
   const report = lines.join("\n");
-  const title = language === "ja" ? "AI実行環境の診断結果" : "AI runtime diagnostic result";
+  const title = language === "ja" ? "CPU/WASM実行環境の診断結果" : "CPU/WASM runtime diagnostic result";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";
   box.innerHTML = `<strong class="${cls}">${title}</strong><pre>${escapeHtml(report)}</pre><div class="diag-actions"><button class="diag-copy" id="copyDiagnostic">${language === "ja" ? "結果をコピー" : "Copy result"}</button></div>`;
   const copy = document.querySelector("#copyDiagnostic");
@@ -384,7 +380,7 @@ prompt.oninput = () => { prompt.style.height = "auto"; prompt.style.height = Mat
 $("#newChat").onclick = newChat;
 $("#language").onclick = () => { language = language === "ja" ? "en" : "ja"; localStorage.setItem("alifo_lang", language); applyLanguage(); };
 $("#settingsBtn").onclick = () => $("#settings").classList.remove("hidden");
-$("#runDiagnostic").onclick = runWebGPUDiagnostic;
+$("#runDiagnostic").onclick = runRuntimeDiagnostic;
 $("#closeSettings").onclick = () => $("#settings").classList.add("hidden");
 $("#settingLanguage").onchange = e => { language = e.target.value; localStorage.setItem("alifo_lang", language); applyLanguage(); };
 $("#clearHistory").onclick = () => { if (confirm(language === "ja" ? "履歴をすべて削除しますか？" : "Delete all chat history?")) { chats = []; currentId = null; save(); newChat(); } };
