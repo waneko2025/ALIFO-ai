@@ -24,7 +24,8 @@ WebLLM model/WASM download hosts are allowed in the Content-Security-Policy, inc
 SmolLM2 360M q4f32_1 を先に試し、失敗時にLlama 3.2 1Bへフォールバック。初回モデル準備の進捗と12分タイムアウトを表示します。
 
 
-## v3.4
-- WebLLMの公式 `prebuiltAppConfig` を明示的に使用。
-- Llama 3.2 1Bを先に使用し、初期化できない場合はSmolLM2 360Mへフォールバック。
-- 生成パラメータを安定寄りに調整し、記号だけの異常出力を検出した場合は軽量モードへ切り替えます。
+## v3.4 Fast mode
+- Uses SmolLM2 360M as the primary on-device model for lower download and runtime cost.
+- Streams generated text into the chat as it arrives.
+- Uses shorter chat history and a smaller output limit to reduce latency.
+- Falls back to the existing server-side lightweight reply mode if local inference fails.

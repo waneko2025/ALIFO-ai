@@ -10,11 +10,6 @@ let localEngine = null;
 let localEnginePromise = null;
 const LOCAL_MODELS = [
   {
-    id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
-    label: "Llama 3.2 1B",
-    approx: "約900MB"
-  },
-  {
     id: "SmolLM2-360M-Instruct-q4f32_1-MLC",
     label: "SmolLM2 360M",
     approx: "約580MB"
@@ -58,7 +53,6 @@ async function getLocalEngine() {
           : `Preparing ${model.label}… 0% (first run downloads the model; keep this page open)`);
         const engine = await Promise.race([
           CreateMLCEngine(model.id, {
-          appConfig: prebuiltAppConfig,
           initProgressCallback: (p) => {
             const pct = Math.max(0, Math.min(100, Math.round((p.progress || 0) * 100)));
             const phase = String(p.text || "").trim();
@@ -206,25 +200,31 @@ async function sendMessage(text) {
     const engine = await getLocalEngine();
     const history = c.messages
       .filter(m => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
-      .slice(-12)
+      .slice(-6)
       .map(m => ({ role: m.role, content: m.content.slice(0, 2000) }));
     const system = language === "ja"
       ? "あなたはALIFO AIです。日本語で自然に会話してください。質問されたらまず直接答えてください。ユーザーの質問文をそのまま言い換えるだけの返答は避けてください。『3つ』など数を指定されたら、その数だけ具体的な案を出してください。必要なときだけ短い確認質問をしてください。前の話題に無理につなげず、新しい質問は新しい話題として扱ってください。説明は分かりやすく、親しみやすくしてください。"
       : "You are ALIFO AI. Reply naturally in English. Answer the user's question directly first. Do not merely restate the user's question. If the user asks for a specific number of items, provide exactly that number of concrete items. Ask a short clarification only when necessary. Do not force a new question into the previous topic; treat it as a new topic when appropriate. Be clear and friendly.";
-    const reply = await engine.chat.completions.create({
+    const stream = await engine.chat.completions.create({
       messages: [{ role: "system", content: system }, ...history],
-      temperature: 0.35,
-      top_p: 0.9,
-      repetition_penalty: 1.05,
-      max_tokens: 320
+      temperature: 0.55,
+      max_tokens: 320,
+      stream: true
     });
-    const textOut = reply?.choices?.[0]?.message?.content?.trim();
+    let textOut = "";
+    for await (const chunk of stream) {
+      const piece = chunk?.choices?.[0]?.delta?.content || "";
+      if (!piece) continue;
+      textOut += piece;
+      loading.querySelector(".bubble").textContent = textOut;
+      scrollToBottom();
+    }
+    textOut = textOut.trim();
     if (!textOut) throw new Error(language === "ja" ? "AIから回答を受け取れませんでした。" : "The AI did not return a response.");
+    // Guard against broken/repetitive generations such as a long run of the same symbol.
     const compact = textOut.replace(/\s/g, "");
-    const punctuationOnly = compact.length >= 20 && /^[!！?？。、,.…・]+$/.test(compact);
-    const repeatedSameChar = compact.length >= 20 && /^(.)\1+$/.test(compact);
-    if (punctuationOnly || repeatedSameChar) {
-      throw new Error(language === "ja" ? "端末内AIが不正な文字列を返しました。軽量モードへ切り替えます。" : "The on-device AI returned an invalid repeated string. Switching to lightweight mode.");
+    if (compact.length >= 30 && /(.)\1{20,}/u.test(compact)) {
+      throw new Error(language === "ja" ? "AIの出力が不安定でした。" : "The AI produced an unstable response.");
     }
     loading.querySelector(".bubble").textContent = textOut;
     c.messages.push({ role: "assistant", content: textOut });
