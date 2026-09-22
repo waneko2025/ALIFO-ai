@@ -27,3 +27,9 @@ npm start
 ```
 
 WebLLMはCDNから読み込みます。
+
+
+## v2.6 hotfix
+- WebLLM CDN loading now tries multiple public module CDNs.
+- If the WebLLM module cannot be loaded, chat automatically falls back to the existing no-API smart reply engine instead of showing a fatal error.
+- The UI remains usable even when a CDN or network temporarily fails.

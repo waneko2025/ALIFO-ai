@@ -15,7 +15,26 @@ async function getLocalEngine() {
   if (localEnginePromise) return localEnginePromise;
   localEnginePromise = (async () => {
     if (!navigator.gpu) throw new Error(language === "ja" ? "このブラウザではWebGPUが利用できません。Chrome/Edgeの最新版を試してください。" : "WebGPU is not available in this browser. Please try the latest Chrome or Edge.");
-    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+    let webllm = null;
+    const loaders = [
+      "https://esm.sh/@mlc-ai/web-llm",
+      "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm",
+      "https://esm.run/@mlc-ai/web-llm"
+    ];
+    let lastImportError = null;
+    for (const url of loaders) {
+      try {
+        webllm = await import(url);
+        break;
+      } catch (err) {
+        lastImportError = err;
+      }
+    }
+    if (!webllm) {
+      throw new Error(language === "ja"
+        ? "AIモジュールを読み込めませんでした。ネットワークを確認して、もう一度お試しください。"
+        : "The AI module could not be loaded. Check your network connection and try again.");
+    }
     const models = webllm.prebuiltAppConfig?.model_list?.map(m => m.model_id) || [];
     const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
     const preferred = mobile ? LOCAL_MODEL_MOBILE : LOCAL_MODEL_DESKTOP;
@@ -175,9 +194,30 @@ async function sendMessage(text) {
     c.messages.push({ role: "assistant", content: textOut });
     save();
   } catch (e) {
-    loading.querySelector(".bubble").textContent = language === "ja"
-      ? `AIを起動できませんでした。\n${e.message}`
-      : `Could not start the local AI.\n${e.message}`;
+    // If WebLLM cannot be loaded (for example, a CDN/network issue), keep ALIFO AI usable
+    // by falling back to the server-side no-API smart reply engine.
+    try {
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: c.messages.slice(-30), language })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Fallback request failed");
+      const fallback = String(d.text || "").trim();
+      if (!fallback) throw new Error("Empty fallback response");
+      loading.querySelector(".bubble").textContent = fallback;
+      c.messages.push({ role: "assistant", content: fallback });
+      save();
+      const status = document.querySelector("#localAiStatus");
+      if (status) status.textContent = language === "ja"
+        ? "端末内AIを読み込めなかったため、軽量モードで動作中"
+        : "On-device AI could not be loaded; lightweight mode is active";
+    } catch (fallbackError) {
+      loading.querySelector(".bubble").textContent = language === "ja"
+        ? `AIを起動できませんでした。\n${e.message}`
+        : `Could not start the local AI.\n${e.message}`;
+    }
   } finally { send.disabled = false; prompt.focus(); }
 }
 

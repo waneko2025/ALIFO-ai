@@ -16,10 +16,10 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader("Content-Security-Policy", [
     "default-src 'self'",
-    "script-src 'self' https://esm.run",
+    "script-src 'self' https://esm.run https://esm.sh https://cdn.jsdelivr.net",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https://image.pollinations.ai https://huggingface.co https://*.huggingface.co",
-    "connect-src 'self' https://image.pollinations.ai https://esm.run https://huggingface.co https://*.huggingface.co https://*.hf.co",
+    "connect-src 'self' https://image.pollinations.ai https://esm.run https://esm.sh https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co",
     "worker-src 'self' blob:",
     "font-src 'self' data:",
     "object-src 'none'",
