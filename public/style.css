@@ -21,3 +21,5 @@
   .attachment-bubble { max-width: 84vw; }
   .attached-image { max-height:300px; }
 }
+
+.diagnostic-btn{width:100%;border:1px solid #d8d9e7;color:#4b4c58;background:#f8f8fc;padding:11px;border-radius:10px;cursor:pointer;margin-bottom:10px}.diagnostic-btn:hover{background:#f0f0fa}.diagnostic-result{margin:10px 0 14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#f8f9fc;color:#454852;font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto}.diagnostic-result.hidden{display:none}.diag-ok{color:#16784b}.diag-warn{color:#9a6500}.diag-error{color:#b33b3b}.diag-actions{display:flex;gap:7px;margin-top:9px}.diag-copy{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 9px;cursor:pointer;font-size:12px}

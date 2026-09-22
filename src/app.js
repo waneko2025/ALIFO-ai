@@ -265,6 +265,80 @@ async function sendMessage(text) {
   } finally { send.disabled = false; prompt.focus(); }
 }
 
+async function runWebGPUDiagnostic() {
+  const box = document.querySelector("#diagnosticResult");
+  if (!box) return;
+  box.classList.remove("hidden");
+  box.textContent = language === "ja" ? "診断しています…" : "Running diagnostics…";
+  const lines = [];
+  const add = (label, value) => lines.push(`${label}: ${value}`);
+  const bool = v => v ? (language === "ja" ? "はい" : "Yes") : (language === "ja" ? "いいえ" : "No");
+  let overall = "ok";
+
+  add(language === "ja" ? "安全な接続" : "Secure context", bool(window.isSecureContext));
+  add("navigator.gpu", bool(!!navigator.gpu));
+  add(language === "ja" ? "ブラウザ" : "Browser", navigator.userAgent);
+
+  if (!window.isSecureContext) overall = "warn";
+  if (!navigator.gpu) {
+    overall = "error";
+    lines.push(language === "ja"
+      ? "→ WebGPU APIがブラウザから見えていません。"
+      : "→ The WebGPU API is not exposed by this browser.");
+  } else {
+    const adapterResults = [];
+    for (const powerPreference of ["high-performance", "low-power"]) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference });
+        if (!adapter) {
+          adapterResults.push(`${powerPreference}: ${language === "ja" ? "取得できない" : "not available"}`);
+          continue;
+        }
+        const info = adapter.info || {};
+        adapterResults.push(`${powerPreference}: OK`);
+        add(language === "ja" ? `GPU (${powerPreference})` : `GPU (${powerPreference})`, [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(" / ") || "WebGPU adapter");
+        add(language === "ja" ? `最大ストレージバッファ (${powerPreference})` : `Max storage buffer (${powerPreference})`, String(adapter.limits?.maxStorageBufferBindingSize ?? "unknown"));
+        add(language === "ja" ? `最大バッファ (${powerPreference})` : `Max buffer (${powerPreference})`, String(adapter.limits?.maxBufferSize ?? "unknown"));
+        add(language === "ja" ? `shader-f16 (${powerPreference})` : `shader-f16 (${powerPreference})`, bool(adapter.features?.has?.("shader-f16")));
+      } catch (err) {
+        adapterResults.push(`${powerPreference}: ERROR ${err?.message || err}`);
+      }
+    }
+    add(language === "ja" ? "アダプター取得" : "Adapter request", adapterResults.join(" | "));
+    const hasAdapter = adapterResults.some(x => x.endsWith(": OK"));
+    if (!hasAdapter) {
+      overall = "error";
+      lines.push(language === "ja"
+        ? "→ WebGPUは有効ですが、ALIFO AIからGPUアダプターを取得できません。GPUドライバーまたはブラウザ側の制限を確認してください。"
+        : "→ WebGPU is enabled, but ALIFO AI could not obtain a GPU adapter. Check the GPU driver or browser restrictions.");
+    }
+  }
+
+  try {
+    const origin = location.origin;
+    add(language === "ja" ? "ALIFO AIのオリジン" : "ALIFO AI origin", origin);
+    add(language === "ja" ? "WebGPU診断時刻" : "Diagnostic time", new Date().toISOString());
+  } catch {}
+
+  const report = lines.join("\n");
+  const title = language === "ja" ? "WebGPU診断結果" : "WebGPU diagnostic result";
+  const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";
+  box.innerHTML = `<strong class="${cls}">${title}</strong><pre>${escapeHtml(report)}</pre><div class="diag-actions"><button class="diag-copy" id="copyDiagnostic">${language === "ja" ? "結果をコピー" : "Copy result"}</button></div>`;
+  const copy = document.querySelector("#copyDiagnostic");
+  if (copy) copy.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(report);
+      copy.textContent = language === "ja" ? "コピーしました" : "Copied";
+    } catch {
+      copy.textContent = language === "ja" ? "コピーできませんでした" : "Copy failed";
+    }
+  };
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
+}
+
 function updateAttachmentState() {
   if (!attachImageBtn) return;
   attachImageBtn.classList.toggle("selected", !!pendingAttachment);
@@ -299,6 +373,7 @@ prompt.oninput = () => { prompt.style.height = "auto"; prompt.style.height = Mat
 $("#newChat").onclick = newChat;
 $("#language").onclick = () => { language = language === "ja" ? "en" : "ja"; localStorage.setItem("alifo_lang", language); applyLanguage(); };
 $("#settingsBtn").onclick = () => $("#settings").classList.remove("hidden");
+$("#runDiagnostic").onclick = runWebGPUDiagnostic;
 $("#closeSettings").onclick = () => $("#settings").classList.add("hidden");
 $("#settingLanguage").onchange = e => { language = e.target.value; localStorage.setItem("alifo_lang", language); applyLanguage(); };
 $("#clearHistory").onclick = () => { if (confirm(language === "ja" ? "履歴をすべて削除しますか？" : "Delete all chat history?")) { chats = []; currentId = null; save(); newChat(); } };

@@ -35,3 +35,7 @@ SmolLM2 360M q4f32_1 を先に試し、失敗時にLlama 3.2 1Bへフォール�
 - Japanese chat uses Llama 3.2 1B q4f16 for more stable Japanese generation.
 - Uses WebLLM's official prebuilt model configuration and browser Cache API.
 - Keeps streaming output and repetition controls for responsive generation.
+
+
+## v3.6 WebGPU診断
+設定画面の「WebGPU診断を実行」から、WebGPU API、Secure Context、GPUアダプター、GPU情報、主要なWebGPU制限値を確認できます。結果はコピーできます。モデルのダウンロードやAPIキーは不要です。
