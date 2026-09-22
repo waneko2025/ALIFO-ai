@@ -59,3 +59,6 @@ This version does not require WebGPU or the `@huggingface/transformers` npm pack
 - Uses onnx-community/Qwen2.5-0.5B-Instruct with q4 weights.
 - Adds CPU/WASM runtime diagnostics for WebAssembly, browser storage, network, and Transformers.js loading.
 - Model loading has a 15-minute timeout and the existing server lightweight fallback keeps chat usable if local inference cannot start.
+
+## v4.0
+CPU/WASM inference runs in a Web Worker so model loading and generation do not freeze the page UI. WebGPU is not used.

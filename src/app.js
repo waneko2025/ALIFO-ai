@@ -1,94 +1,68 @@
 // CPU/WASM mode: load Transformers.js from a CDN at runtime so the server build
 // does not need the package installed. WebGPU is never requested.
-let transformersModule = null;
-async function getTransformers() {
-  if (!transformersModule) {
-    transformersModule = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm");
-    transformersModule.env.allowRemoteModels = true;
-    transformersModule.env.allowLocalModels = false;
-    transformersModule.env.useBrowserCache = true;
-  }
-  return transformersModule;
-}
-let language = localStorage.getItem("alifo_lang") || "ja";
-let chats = JSON.parse(localStorage.getItem("alifo_chats") || "[]");
-let currentId = null;
-
-const $ = s => document.querySelector(s);
-const messages = $("#messages"), empty = $("#empty"), prompt = $("#prompt"), send = $("#send"), generateImageBtn = $("#generateImage"), attachImageBtn = $("#attachImage"), imageInput = $("#imageInput");
-let pendingAttachment = null;
-let localEngine = null;
-let localEnginePromise = null;
+let aiWorker = null;
+let aiWorkerPromise = null;
+let aiRequestId = 0;
 const LOCAL_MODEL = {
   id: "onnx-community/Qwen2.5-0.5B-Instruct",
   label: "Qwen2.5 0.5B",
   approx: "約786MB（q4）"
 };
 
-async function getLocalEngine() {
-  if (localEngine) return localEngine;
-  if (localEnginePromise) return localEnginePromise;
+function createAIWorker() {
+  if (!aiWorker) {
+    aiWorker = new Worker(new URL("./ai-worker.js", import.meta.url), { type: "module" });
+  }
+  return aiWorker;
+}
 
-  localEnginePromise = (async () => {
-    const status = (text) => {
-      const el = document.querySelector("#localAiStatus");
-      if (el) el.textContent = text;
-    };
-
-    status(language === "ja"
-      ? `端末内AI（CPU/WASM）を準備しています… 初回は${LOCAL_MODEL.approx}程度のダウンロードがあります`
-      : `Preparing on-device AI (CPU/WASM)… first run downloads about ${LOCAL_MODEL.approx}`);
-
-    let lastProgress = 0;
-    const progress_callback = (p) => {
-      if (p?.status === "progress_total" && Number.isFinite(p.progress)) {
-        const pct = Math.max(0, Math.min(100, Math.round(p.progress)));
-        if (pct !== lastProgress) {
-          lastProgress = pct;
-          status(language === "ja"
-            ? `端末内AI（CPU/WASM）を準備中… ${pct}%`
-            : `Preparing on-device AI (CPU/WASM)… ${pct}%`);
-        }
-      } else if (p?.status === "ready") {
-        status(language === "ja"
-          ? "端末内AI（CPU/WASM）の準備が完了しました"
-          : "On-device AI (CPU/WASM) is ready");
+function getLocalEngine() {
+  if (aiWorkerPromise) return aiWorkerPromise;
+  aiWorkerPromise = new Promise((resolve, reject) => {
+    const worker = createAIWorker();
+    const onMessage = (event) => {
+      const d = event.data || {};
+      if (d.type === "progress") {
+        const el = document.querySelector("#localAiStatus");
+        if (el && Number.isFinite(d.progress)) el.textContent = language === "ja" ? `端末内AI（CPU/WASM）を準備中… ${Math.round(d.progress)}%` : `Preparing on-device AI (CPU/WASM)… ${Math.round(d.progress)}%`;
+        return;
+      }
+      if (d.type === "ready") {
+        worker.removeEventListener("message", onMessage);
+        resolve({
+          generate: (payload, onChunk) => generateInWorker(worker, payload, onChunk)
+        });
+      } else if (d.type === "error" && d.scope === "init") {
+        worker.removeEventListener("message", onMessage);
+        reject(new Error(d.message || "CPU/WASM AI initialization failed"));
       }
     };
-
-    try {
-      // Explicitly select WASM/CPU. This path never calls navigator.gpu.
-      const { pipeline } = await getTransformers();
-      const loadPromise = pipeline(
-        "text-generation",
-        LOCAL_MODEL.id,
-        {
-          device: "wasm",
-          dtype: "q4",
-          progress_callback
-        }
-      );
-      const generator = await Promise.race([
-        loadPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(language === "ja" ? "モデルの準備が15分を超えました。ネットワークまたは保存容量を確認してください。" : "Model preparation exceeded 15 minutes. Check network access or browser storage.")), 15 * 60 * 1000))
-      ]);
-
-      localEngine = generator;
-      status(language === "ja"
-        ? `端末内AIを使用中（${LOCAL_MODEL.label} / CPU）`
-        : `Using on-device AI (${LOCAL_MODEL.label} / CPU)`);
-      return generator;
-    } catch (err) {
-      const message = err?.message || String(err);
-      throw new Error(language === "ja"
-        ? `CPU/WASM版AIを起動できませんでした。モデルのダウンロードとブラウザの保存容量を確認してください。詳細: ${message}`
-        : `The CPU/WASM AI could not start. Check the model download and browser storage. Details: ${message}`);
-    }
-  })();
-
-  try { return await localEnginePromise; }
-  finally { localEnginePromise = null; }
+    worker.addEventListener("message", onMessage);
+    worker.postMessage({ type: "init", model: LOCAL_MODEL.id, language });
+  }).catch(err => { aiWorkerPromise = null; throw err; });
+  return aiWorkerPromise;
 }
+
+function generateInWorker(worker, payload, onChunk) {
+  return new Promise((resolve, reject) => {
+    const id = ++aiRequestId;
+    const handler = (event) => {
+      const d = event.data || {};
+      if (d.id !== id) return;
+      if (d.type === "chunk") onChunk?.(d.text || "");
+      else if (d.type === "done") {
+        worker.removeEventListener("message", handler);
+        resolve(d.text || "");
+      } else if (d.type === "error") {
+        worker.removeEventListener("message", handler);
+        reject(new Error(d.message || "CPU/WASM generation failed"));
+      }
+    };
+    worker.addEventListener("message", handler);
+    worker.postMessage({ type: "generate", id, ...payload });
+  });
+}
+
 function save() {
   try { localStorage.setItem("alifo_chats", JSON.stringify(chats)); }
   catch { /* keep the current session usable if localStorage is full */ }
@@ -219,22 +193,13 @@ async function sendMessage(text) {
       ? "あなたはALIFO AIです。日本語で自然に、短く分かりやすく答えてください。ユーザーの質問を繰り返したり、質問文を言い換えるだけの返答はしないでください。まず答えを直接書き、必要なら理由や具体例を続けてください。数を指定されたらその数だけ答えてください。分からないことは推測せず、分からないと伝えてください。新しい質問は新しい話題として扱ってください。"
       : "You are ALIFO AI. Reply naturally in English. Answer the user's question directly first. Do not merely restate the user's question. If the user asks for a specific number of items, provide exactly that number of concrete items. Ask a short clarification only when necessary. Do not force a new question into the previous topic; treat it as a new topic when appropriate. Be clear and friendly.";
     let textOut = "";
-    const { TextStreamer } = await getTransformers();
-    const streamer = new TextStreamer(engine.tokenizer, {
-      skip_prompt: true,
-      skip_special_tokens: true,
-      callback_function: (piece) => {
-        textOut += piece;
-        loading.querySelector(".bubble").textContent = textOut;
-        scrollToBottom();
-      }
-    });
-
-    const result = await engine(historyWithSystem(history, system), {
-      max_new_tokens: 256,
-      do_sample: false,
-      streamer,
-      return_full_text: false
+    textOut = await engine.generate({
+      messages: historyWithSystem(history, system),
+      max_new_tokens: 256
+    }, (piece) => {
+      textOut += piece;
+      loading.querySelector(".bubble").textContent = textOut;
+      scrollToBottom();
     });
 
     textOut = textOut.trim();
