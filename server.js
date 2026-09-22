@@ -45,7 +45,7 @@ function clientKey(req, scope) {
   return `${scope}:${req.ip || req.socket.remoteAddress || "unknown"}`;
 }
 
-app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
+app.use(express.static(path.join(__dirname, "dist"), { extensions: ["html"] }));
 
 function textOf(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();

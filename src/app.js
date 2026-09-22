@@ -13,11 +13,6 @@ const LOCAL_MODELS = [
     id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
     label: "Llama 3.2 1B",
     approx: "約900MB"
-  },
-  {
-    id: "SmolLM2-360M-Instruct-q4f32_1-MLC",
-    label: "SmolLM2 360M",
-    approx: "約600MB"
   }
 ];
 
@@ -231,8 +226,8 @@ async function sendMessage(text) {
       save();
       const status = document.querySelector("#localAiStatus");
       if (status) status.textContent = language === "ja"
-        ? "端末内AIを起動できなかったため、軽量モードで動作中"
-        : "On-device AI could not be loaded; lightweight mode is active";
+        ? `端末内AIを起動できなかったため、軽量モードで動作中（原因: ${e.message}）`
+        : `On-device AI could not be loaded; lightweight mode is active (reason: ${e.message})`;
     } catch (fallbackError) {
       loading.querySelector(".bubble").textContent = language === "ja"
         ? `AIを起動できませんでした。\n${e.message}`
