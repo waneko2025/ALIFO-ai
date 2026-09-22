@@ -46,3 +46,7 @@ WebGPU/Transformers.js/WASMの自動起動を停止し、チャットはサー�
 ## v4.9
 - New explicit tasks such as 「作文を作って」 no longer inherit the previous topic.
 - Added a dedicated essay-request response.
+
+## v5.0
+- Writing-topic context now takes priority over factual Wikipedia lookup.
+- A topic such as 「夏休みの思い出」 after 「作文を作って」 is treated as an essay topic instead of a factual search.

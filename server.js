@@ -90,6 +90,33 @@ function recentContext(messages) {
   return u.slice(-4);
 }
 
+function isWritingContext(messages = []) {
+  const recent = messages.slice(-8).map(m => textOf(m?.content));
+  return recent.some(text => containsAny(text, [
+    "作文を作るよ", "まずテーマを教えて", "作文を作って", "作文を書いて",
+    "文章を作って", "文章を書いて", "作文のテーマ", "作文にできる"
+  ]));
+}
+
+function looksLikeWritingTopic(q = "") {
+  const t = textOf(q);
+  if (!t || t.length > 40 || /[?？]$/.test(t)) return false;
+  return !containsAny(t, [
+    "もっと", "詳しく", "くわしく", "短く", "簡単に", "例を", "具体例",
+    "ありがとう", "こんにちは", "こんばんは", "おはよう", "それ", "これ"
+  ]);
+}
+
+function writingTopicReply(topic) {
+  const t = extractTopic(topic);
+  const title = t || "思い出";
+  const examples = {
+    "夏休みの思い出": `「夏休みの思い出」についての作文だね！😊\n\n【例文】\n\nタイトル：夏休みの思い出\n\n私の夏休みの一番の思い出は、家族と出かけたことです。\n\n朝からみんなで準備をして、いつもより少し早く家を出ました。目的地に着くと、きれいな景色を見たり、おいしいものを食べたりして、楽しい時間を過ごしました。特に心に残っているのは、家族みんなで笑いながら話したことです。\n\n最初は少し疲れましたが、一緒に過ごすうちに元気になりました。普段は学校や仕事などで忙しい家族と、ゆっくり話せたこともよかったです。\n\nこの夏休みを通して、家族と過ごす時間の大切さを感じました。これからもみんなで楽しい思い出を作っていきたいです。\n\n実際の思い出に合わせて、行った場所・したこと・一番楽しかったことを入れると、もっと自分らしい作文になるよ。`,
+    "将来の夢": `「将来の夢」についての作文だね！😊\n\n【例文】\n\nタイトル：私の将来の夢\n\n私には、将来やってみたいことがあります。まだはっきり決まってはいませんが、人の役に立つ仕事をしたいと思っています。\n\nその理由は、誰かに「ありがとう」と言ってもらえたときに、うれしい気持ちになるからです。学校生活でも、友達が困っているときに手伝うと、相手だけでなく自分もうれしくなります。\n\nこれからいろいろなことを経験して、自分が本当にやりたいことを見つけたいです。そのために、勉強や新しいことへの挑戦を大切にしたいと思います。\n\nいつか、自分の力で誰かを笑顔にできる人になりたいです。`,
+  };
+  return examples[title] || `「${title}」についての作文だね！😊\n\nまずは書きやすい形で例を作るよ。\n\n【作文の例】\n\nタイトル：${title}\n\n私が「${title}」について考えてみて、まず思ったのは、身近な出来事にも大切な意味があるということです。\n\nそのときに感じたことや、特に心に残ったことを思い出すと、いろいろなことが見えてきます。楽しかったことだけでなく、難しかったことや、そこから学んだことも大切な思い出です。\n\nこれからも一つ一つの経験を大切にして、いろいろなことに挑戦していきたいです。\n\n実際の出来事を2〜3個教えてくれれば、もっと自分らしい作文に書き換えられるよ。`;
+}
+
 function followupJapanese(q, history) {
   const lower = q.toLowerCase();
   if (containsAny(lower, ["もっと", "詳しく", "くわしく"])) return "もちろん。もう少し具体的にすると、ポイントを分けて順番に説明できるよ。どの部分を詳しくしたいか指定してくれたら、そこに絞るね。";
@@ -110,6 +137,12 @@ function smartJapanese(q, history) {
   if (!q) return "何でも送ってね。😊";
   const topic = extractTopic(q);
   const recent = recentContext(history);
+
+  // If ALIFO AI just asked for a writing/essay topic, a short phrase such as
+  // 「夏休みの思い出」 is a creative topic, not a factual lookup target.
+  if (isWritingContext(history) && looksLikeWritingTopic(q)) {
+    return writingTopicReply(q);
+  }
 
   const follow = followupJapanese(q, recent);
   if (follow) return follow;
@@ -354,6 +387,7 @@ function looksLikeShortTopic(q) {
 async function knowledgeReply(messages, language) {
   const q = lastUser(messages);
   if (!q) return null;
+  if (isWritingContext(messages) && looksLikeWritingTopic(q)) return null;
   if (containsAny(q, ["今何時", "今の時間", "今日の日付", "今日は何日"])) return null;
   // A short noun/topic such as 「お金」「火星」「Python」 is often a new
   // topic, even when it follows another conversation. Treat it as a factual
