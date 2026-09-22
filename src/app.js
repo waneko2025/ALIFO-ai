@@ -181,7 +181,8 @@ async function sendMessage(text) {
   } else {
     addMessage("user", text);
   }
-  prompt.value = ""; prompt.style.height = "auto"; send.disabled = true;
+  const originalPrompt = prompt.value;
+  prompt.style.height = "auto"; send.disabled = true;
   const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
   try {
     // Stable no-GPU mode: use the server-side no-API response engine.
@@ -206,6 +207,8 @@ async function sendMessage(text) {
     loading.querySelector(".bubble").textContent = language === "ja"
       ? `回答できませんでした。\n${e.message}`
       : `I couldn't answer that.\n${e.message}`;
+    // Keep the typed text when a request fails.
+    if (!prompt.value) { prompt.value = originalPrompt; prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 140) + "px"; }
   } finally { send.disabled = false; prompt.focus(); }
 }
 
