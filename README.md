@@ -50,3 +50,17 @@ WebGPU/Transformers.js/WASMの自動起動を停止し、チャットはサー�
 ## v5.0
 - Writing-topic context now takes priority over factual Wikipedia lookup.
 - A topic such as 「夏休みの思い出」 after 「作文を作って」 is treated as an essay topic instead of a factual search.
+
+
+## v5.2 — APIキー不要の外部AI
+
+ALIFO AIのチャットをPuter.js経由の外部AIに変更しました。サイト側でOpenAI APIキーやPollinationsのAPIキーを設定する必要はありません。Puter.jsはブラウザ上でユーザーの認証・AI利用を処理します。
+
+- GPT-5.6 Lunaを利用
+- ALIFO AI側にAPIキーを保存しない
+- Renderの環境変数にAIキーを登録しなくてよい
+- WebGPUや重いブラウザ内LLMをチャット処理に使わない
+- Puter側でログインが必要になる場合があります
+- Puterの無料枠・利用条件・レート制限はPuter側の最新仕様に従います
+
+参考: https://docs.puter.com/AI/ および https://docs.puter.com/user-pays-model/

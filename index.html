@@ -51,7 +51,7 @@
         <button id="generateImage" type="button" title="画像を生成" aria-label="画像を生成">🖼</button>
         <button id="send" type="submit" aria-label="送信">↑</button>
       </form>
-      <div class="disclaimer"><span id="localAiStatus" data-ja="端末内AIを準備します。初回はAIモデルのダウンロードがあります。" data-en="Preparing on-device AI. The first use downloads the AI model.">端末内AIを準備します。初回はAIモデルのダウンロードがあります。</span><br><span data-ja="会話は対応ブラウザ上でAIモデルを実行します。画像生成は外部の画像サービスを利用します。" data-en="Chat runs an AI model in your browser. Image generation uses an external image service.">会話は対応ブラウザ上でAIモデルを実行します。画像生成は外部の画像サービスを利用します。</span></div>
+      <div class="disclaimer"><span id="localAiStatus" data-ja="外部AI（Puter）を準備しています。APIキーは不要です。" data-en="Preparing external AI (Puter). No API key is required.">外部AI（Puter）を準備しています。APIキーは不要です。</span><br><span data-ja="会話はPuterのAIを利用します。APIキーはサイト側に保存しません。画像生成は外部の画像サービスを利用します。" data-en="Chat uses Puter AI. No API key is stored by this site. Image generation uses an external image service.">会話はPuterのAIを利用します。APIキーはサイト側に保存しません。画像生成は外部の画像サービスを利用します。</span></div>
     </div>
   </section>
 </div>
@@ -60,11 +60,12 @@
   <div class="modal-box">
     <div class="modal-head"><h2 data-ja="設定" data-en="Settings">設定</h2><button class="icon-btn" id="closeSettings" aria-label="閉じる">×</button></div>
     <label><span data-ja="言語" data-en="Language">言語</span><select id="settingLanguage"><option value="ja">日本語</option><option value="en">English</option></select></label>
-    <button class="diagnostic-btn" id="runDiagnostic" data-ja="🔧 CPU/WASM診断を実行" data-en="🔧 Run CPU/WASM diagnostic">🔧 CPU/WASM診断を実行</button>
+    <button class="diagnostic-btn" id="runDiagnostic" data-ja="🔧 AI接続診断を実行" data-en="🔧 Run AI connection diagnostic">🔧 AI接続診断を実行</button>
     <div id="diagnosticResult" class="diagnostic-result hidden" aria-live="polite"></div>
     <button class="danger" id="clearHistory" data-ja="チャット履歴をすべて削除" data-en="Delete all chat history">チャット履歴をすべて削除</button>
   </div>
 </div>
+<script src="https://js.puter.com/v2/"></script>
 <script type="module" src="/src/app.js"></script>
 </body>
 </html>

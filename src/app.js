@@ -205,24 +205,33 @@ async function sendMessage(text) {
   prompt.style.height = "auto"; send.disabled = true;
   const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
   try {
-    // Stable no-GPU mode: use the server-side no-API response engine.
-    // This intentionally does not initialize WebGPU, Transformers.js, WASM, or a Worker.
-    const r = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: c.messages.slice(-30), language })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || "Chat request failed");
-    const answer = String(d.text || "").trim();
+    // API-key-free cloud AI: Puter.js handles the user's authentication/session.
+    // The site never stores an OpenAI/Pollinations API key.
+    if (!window.puter?.ai?.chat) {
+      throw new Error(language === "ja" ? "外部AIの読み込みに失敗しました。ページを再読み込みしてください。" : "The external AI library could not be loaded. Please reload the page.");
+    }
+    const recent = c.messages
+      .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+      .slice(-20)
+      .map(m => ({ role: m.role, content: m.content.slice(0, 6000) }));
+    const system = language === "ja"
+      ? "あなたはALIFO AIです。今回のユーザーの依頼を主なタスクとして、自然で分かりやすく答えてください。前の会話は『それ』『これ』『もっと詳しく』など明確に参照している場合だけ使ってください。新しい依頼に古い話題を勝手に持ち込まないでください。作文を頼まれたら作文として答えてください。Web検索を実際にしていない場合は、検索したとは言わないでください。小学生〜高校生にも分かりやすく、安全で役立つ回答にしてください。"
+      : "You are ALIFO AI. Answer the user's current request naturally and clearly. Use previous conversation only when the user clearly refers back to it. Do not carry an old topic into a new request. If the user asks for an essay, answer as an essay task. Do not claim to have browsed the web unless you actually did. Keep answers clear, safe, and age-appropriate.";
+    const response = await window.puter.ai.chat([
+      { role: "system", content: system },
+      ...recent
+    ], false, { model: "gpt-5.6-luna" });
+    const answer = typeof response === "string"
+      ? response.trim()
+      : String(response?.message?.content ?? response?.text ?? response?.content ?? "").trim();
     if (!answer) throw new Error(language === "ja" ? "回答を受け取れませんでした。" : "No response was received.");
     loading.querySelector(".bubble").textContent = answer;
     c.messages.push({ role: "assistant", content: answer });
     save();
     const status = document.querySelector("#localAiStatus");
     if (status) status.textContent = language === "ja"
-      ? "安定モード（WebGPU不要・CPU負荷が小さい）で動作中"
-      : "Stable mode active (no WebGPU, low CPU load)";
+      ? "外部AI（Puter）で動作中・APIキー不要"
+      : "External AI (Puter) active · no API key required";
   } catch (e) {
     loading.querySelector(".bubble").textContent = language === "ja"
       ? `回答できませんでした。\n${e.message}`
@@ -264,15 +273,15 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
   }
 
-  add(language === "ja" ? "AI実行方式" : "AI execution", "Stable server mode / no WebGPU");
-  add(language === "ja" ? "WebGPU" : "WebGPU", "使用しません");
+  add(language === "ja" ? "AI実行方式" : "AI execution", "Puter.js / GPT-5.6 Luna");
+  add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "不要（Puterがユーザー認証を処理）" : "Not required (Puter handles user authentication)");
   try {
     const origin = location.origin;
     add(language === "ja" ? "ALIFO AIのオリジン" : "ALIFO AI origin", origin);
     add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
   } catch {}
 
-  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Transformers.js / ONNX Runtime Web / WASM (CPU)");
+  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Puter.js / GPT-5.6 Luna (cloud AI)");
   const report = lines.join("\n");
   const title = language === "ja" ? "CPU/WASM実行環境の診断結果" : "CPU/WASM runtime diagnostic result";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";

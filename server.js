@@ -16,10 +16,10 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader("Content-Security-Policy", [
     "default-src 'self'",
-    "script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'",
+    "script-src 'self' https://cdn.jsdelivr.net https://js.puter.com 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https://image.pollinations.ai https://huggingface.co https://*.huggingface.co",
-    "connect-src 'self' https://cdn.jsdelivr.net https://image.pollinations.ai https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://github.com https://objects.githubusercontent.com",
+    "connect-src 'self' https://cdn.jsdelivr.net https://image.pollinations.ai https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://github.com https://objects.githubusercontent.com https://*.puter.com",
     "worker-src 'self' blob:",
     "font-src 'self' data:",
     "object-src 'none'",
@@ -404,6 +404,9 @@ async function knowledgeReply(messages, language) {
   return { text: answer, source: result.url || null, title: result.title || topic };
 }
 
+
+
+
 function smartReply(messages, language) {
   const q = lastUser(messages);
   return language === "en" ? smartEnglish(q, messages) : smartJapanese(q, messages);
@@ -419,7 +422,7 @@ app.post("/api/chat", async (req, res) => {
     const lang = language === "en" ? "en" : "ja";
     const knowledge = await knowledgeReply(safeMessages, lang);
     if (knowledge) return res.json({ text: knowledge.text, source: knowledge.source, sourceTitle: knowledge.title, mode: "knowledge" });
-    res.json({ text: smartReply(safeMessages, lang), mode: "stable" });
+    res.json({ text: smartReply(safeMessages, lang), mode: "stable-fallback" });
   } catch {
     res.status(400).json({ error: "メッセージを処理できませんでした。" });
   }
@@ -468,4 +471,4 @@ app.get("/api/image-download", async (req, res) => {
 });
 
 app.get("/{*splat}", (_, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
-app.listen(PORT, () => console.log(`ALIFO AI v3.2 running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`ALIFO AI v5.1 running on http://localhost:${PORT}`));
