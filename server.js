@@ -19,7 +19,7 @@ app.use((req, res, next) => {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https://image.pollinations.ai https://huggingface.co https://*.huggingface.co",
-    "connect-src 'self' https://image.pollinations.ai https://huggingface.co https://*.huggingface.co https://*.hf.co",
+    "connect-src 'self' https://image.pollinations.ai https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://github.com https://objects.githubusercontent.com",
     "worker-src 'self' blob:",
     "font-src 'self' data:",
     "object-src 'none'",

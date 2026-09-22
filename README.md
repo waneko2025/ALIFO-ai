@@ -9,3 +9,7 @@
 ## Render
 Build Command: `npm install`
 Start Command: `npm start`
+
+
+## v3.1
+WebLLM model/WASM download hosts are allowed in the Content-Security-Policy, including raw.githubusercontent.com, github.com, and objects.githubusercontent.com.
