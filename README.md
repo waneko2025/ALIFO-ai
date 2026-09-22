@@ -29,3 +29,9 @@ SmolLM2 360M q4f32_1 を先に試し、失敗時にLlama 3.2 1Bへフォール�
 - Streams generated text into the chat as it arrives.
 - Uses shorter chat history and a smaller output limit to reduce latency.
 - Falls back to the existing server-side lightweight reply mode if local inference fails.
+
+
+## v3.5
+- Japanese chat uses Llama 3.2 1B q4f16 for more stable Japanese generation.
+- Uses WebLLM's official prebuilt model configuration and browser Cache API.
+- Keeps streaming output and repetition controls for responsive generation.

@@ -10,9 +10,9 @@ let localEngine = null;
 let localEnginePromise = null;
 const LOCAL_MODELS = [
   {
-    id: "SmolLM2-360M-Instruct-q4f32_1-MLC",
-    label: "SmolLM2 360M",
-    approx: "約580MB"
+    id: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
+    label: "Llama 3.2 1B",
+    approx: "約900MB"
   }
 ];
 
@@ -53,6 +53,7 @@ async function getLocalEngine() {
           : `Preparing ${model.label}… 0% (first run downloads the model; keep this page open)`);
         const engine = await Promise.race([
           CreateMLCEngine(model.id, {
+          appConfig: { ...prebuiltAppConfig, cacheBackend: "cache" },
           initProgressCallback: (p) => {
             const pct = Math.max(0, Math.min(100, Math.round((p.progress || 0) * 100)));
             const phase = String(p.text || "").trim();
@@ -203,12 +204,15 @@ async function sendMessage(text) {
       .slice(-6)
       .map(m => ({ role: m.role, content: m.content.slice(0, 2000) }));
     const system = language === "ja"
-      ? "あなたはALIFO AIです。日本語で自然に会話してください。質問されたらまず直接答えてください。ユーザーの質問文をそのまま言い換えるだけの返答は避けてください。『3つ』など数を指定されたら、その数だけ具体的な案を出してください。必要なときだけ短い確認質問をしてください。前の話題に無理につなげず、新しい質問は新しい話題として扱ってください。説明は分かりやすく、親しみやすくしてください。"
+      ? "あなたはALIFO AIです。日本語で自然に、短く分かりやすく答えてください。ユーザーの質問を繰り返したり、質問文を言い換えるだけの返答はしないでください。まず答えを直接書き、必要なら理由や具体例を続けてください。数を指定されたらその数だけ答えてください。分からないことは推測せず、分からないと伝えてください。新しい質問は新しい話題として扱ってください。"
       : "You are ALIFO AI. Reply naturally in English. Answer the user's question directly first. Do not merely restate the user's question. If the user asks for a specific number of items, provide exactly that number of concrete items. Ask a short clarification only when necessary. Do not force a new question into the previous topic; treat it as a new topic when appropriate. Be clear and friendly.";
     const stream = await engine.chat.completions.create({
       messages: [{ role: "system", content: system }, ...history],
-      temperature: 0.55,
-      max_tokens: 320,
+      temperature: 0.6,
+      top_p: 0.9,
+      repetition_penalty: 1.05,
+      frequency_penalty: 0.08,
+      max_tokens: 256,
       stream: true
     });
     let textOut = "";
@@ -223,7 +227,11 @@ async function sendMessage(text) {
     if (!textOut) throw new Error(language === "ja" ? "AIから回答を受け取れませんでした。" : "The AI did not return a response.");
     // Guard against broken/repetitive generations such as a long run of the same symbol.
     const compact = textOut.replace(/\s/g, "");
-    if (compact.length >= 30 && /(.)\1{20,}/u.test(compact)) {
+    const punctuationOnly = compact.length >= 20 && !/[\p{L}\p{N}]/u.test(compact);
+    const repeated = compact.length >= 30 && /(.)\1{12,}/u.test(compact);
+    const echoedPrompt = textOut.length >= Math.max(40, text.length * 1.2) &&
+      textOut.includes(text.slice(0, Math.min(24, text.length)));
+    if (punctuationOnly || repeated || echoedPrompt) {
       throw new Error(language === "ja" ? "AIの出力が不安定でした。" : "The AI produced an unstable response.");
     }
     loading.querySelector(".bubble").textContent = textOut;
