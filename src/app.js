@@ -8,47 +8,47 @@ const messages = $("#messages"), empty = $("#empty"), prompt = $("#prompt"), sen
 let pendingAttachment = null;
 let localEngine = null;
 let localEnginePromise = null;
-const LOCAL_MODEL_DESKTOP = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
-const LOCAL_MODEL_MOBILE = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+const LOCAL_MODEL = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
 async function getLocalEngine() {
   if (localEngine) return localEngine;
   if (localEnginePromise) return localEnginePromise;
   localEnginePromise = (async () => {
-    if (!navigator.gpu) {
-      throw new Error(language === "ja"
-        ? "このブラウザではWebGPUが利用できません。Chrome/Edgeの最新版と、GPUアクセラレーションを確認してください。"
-        : "WebGPU is not available. Please use the latest Chrome/Edge and check GPU acceleration.");
-    }
-
-    // WebLLM is bundled into ALIFO AI at build time. This avoids runtime CDN
-    // module imports such as esm.run, which can fail because of browser/network
-    // module loading restrictions.
-    const models = prebuiltAppConfig?.model_list?.map(m => m.model_id) || [];
-    const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
-    const preferred = mobile ? LOCAL_MODEL_MOBILE : LOCAL_MODEL_DESKTOP;
-    const model = models.includes(preferred)
-      ? preferred
-      : (models.includes(LOCAL_MODEL_MOBILE)
-        ? LOCAL_MODEL_MOBILE
-        : models.find(m => /Qwen2.5.*0.5B.*MLC/.test(m)));
-
-    if (!model) {
-      throw new Error(language === "ja"
-        ? "利用できるローカルAIモデルが見つかりませんでした。"
-        : "No compatible local AI model was found.");
-    }
-
     const status = (text) => {
       const el = document.querySelector("#localAiStatus");
       if (el) el.textContent = text;
     };
 
-    status(language === "ja"
-      ? "端末内AIを読み込んでいます… 初回はモデルのダウンロードがあります"
-      : "Loading on-device AI… the first run downloads the model");
+    if (!navigator.gpu) {
+      throw new Error(language === "ja"
+        ? "このブラウザではWebGPUが利用できません。Chrome/Edgeのハードウェアアクセラレーションを確認してください。"
+        : "WebGPU is not available. Check browser hardware acceleration.");
+    }
 
-    const engine = await CreateMLCEngine(model, {
+    status(language === "ja" ? "WebGPUを確認しています…" : "Checking WebGPU…");
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error(language === "ja"
+        ? "WebGPUアダプターを取得できませんでした。Chromeのハードウェアアクセラレーションを有効にしてください。"
+        : "Could not obtain a WebGPU adapter. Enable hardware acceleration in Chrome.");
+    }
+
+    const record = prebuiltAppConfig?.model_list?.find(m => m.model_id === LOCAL_MODEL);
+    if (!record) {
+      throw new Error(language === "ja"
+        ? "ローカルAIモデルの設定が見つかりませんでした。"
+        : "The local AI model configuration was not found.");
+    }
+
+    status(language === "ja"
+      ? "端末内AIを読み込んでいます… 初回は約900MBのモデルをダウンロードします"
+      : "Loading on-device AI… the first run downloads about 900 MB");
+
+    const engine = await CreateMLCEngine(LOCAL_MODEL, {
+      appConfig: {
+        cacheBackend: "cache",
+        model_list: [record]
+      },
       initProgressCallback: (p) => {
         const pct = Math.max(0, Math.min(100, Math.round((p.progress || 0) * 100)));
         status(language === "ja" ? `AIモデルを準備中… ${pct}%` : `Preparing local AI… ${pct}%`);
@@ -215,7 +215,7 @@ async function sendMessage(text) {
       save();
       const status = document.querySelector("#localAiStatus");
       if (status) status.textContent = language === "ja"
-        ? "端末内AIを読み込めなかったため、軽量モードで動作中"
+        ? "端末内AIを読み込めなかったため、軽量モードで動作中（設定からWebGPUを確認できます）"
         : "On-device AI could not be loaded; lightweight mode is active";
     } catch (fallbackError) {
       loading.querySelector(".bubble").textContent = language === "ja"
