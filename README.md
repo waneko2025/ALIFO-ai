@@ -1,35 +1,25 @@
-# ALIFO AI v2.5 — 端末内AI版
+# ALIFO AI v2.7 — Local AI bundle
 
-ALIFO AIのテキスト会話を、APIキーなし・従量課金なしで動かせるようにした実験版です。
+ALIFO AIを、CDNからWebLLMを実行時に読み込む方式から、`@mlc-ai/web-llm` をビルド時にバンドルする方式へ変更した版です。
 
-## 仕組み
-
-WebLLMを使い、オープンモデルをユーザーのブラウザ内でWebGPU実行します。会話テキストはこのAI処理のために外部のLLM APIへ送信しません。WebLLMはブラウザ内推論を提供し、モデルは初回利用時にダウンロードされます。
-
-- デスクトップ: Qwen2.5 1.5B Instruct（対応モデルが利用可能な場合）
-- モバイル: Qwen2.5 0.5B Instruct
+## 特徴
 - APIキー不要
-- AI APIの月額/従量課金不要
-- 初回はモデルのダウンロードが必要
-- WebGPU非対応端末ではローカルAIを起動できません
+- 有料AI API不要
+- WebGPU対応ブラウザ上でローカルLLMを実行
+- 初回だけモデルのダウンロードが必要
+- WebLLMの実行時CDN import（esm.run / esm.sh / jsdelivr）を使用しない
+- WebGPUが使えない場合は既存の軽量モードへフォールバック
+- 日本語 / English 切替
+- 画像生成・画像添付機能を維持
+
+## Render
+現在のRender設定が `npm install` → `npm start` の場合でも動くよう、`postinstall` でVite buildを実行します。
+
+推奨:
+- Build Command: `npm install`
+- Start Command: `npm start`
+
+またはBuild Commandを `npm install && npm run build` にしても構いません。
 
 ## 注意
-
-モデルのダウンロードサイズ・速度は端末や通信環境によって変わります。特にスマートフォンではメモリやGPU性能によって動作しない場合があります。
-
-画像添付は現在のUIで表示・保存できますが、この端末内テキストモデルは画像そのものを解析しません。画像認識を追加する場合は別の対応モデルが必要です。
-
-## 起動
-
-```
-npm install
-npm start
-```
-
-WebLLMはCDNから読み込みます。
-
-
-## v2.6 hotfix
-- WebLLM CDN loading now tries multiple public module CDNs.
-- If the WebLLM module cannot be loaded, chat automatically falls back to the existing no-API smart reply engine instead of showing a fatal error.
-- The UI remains usable even when a CDN or network temporarily fails.
+ローカルLLMはユーザーの端末GPUで動きます。初回はモデルファイルのダウンロードが必要で、端末性能によって速度が変わります。

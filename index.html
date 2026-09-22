@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#5b5cf0">
+<meta name="description" content="ALIFO AI - 無料で試せるチャットと画像生成">
+<title>ALIFO AI</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="side-top">
+      <a class="logo" href="#" aria-label="ALIFO AI"><span>A</span> ALIFO <b>AI</b></a>
+      <button class="icon-btn mobile-close" id="closeSidebar" aria-label="閉じる">×</button>
+    </div>
+    <button class="new-chat" id="newChat">＋ <span data-ja="新しいチャット" data-en="New chat">新しいチャット</span></button>
+    <div class="history-title" data-ja="チャット履歴" data-en="Chat history">チャット履歴</div>
+    <div id="history" class="history"></div>
+    <div class="side-bottom"><button class="side-btn" id="settingsBtn">⚙ <span data-ja="設定" data-en="Settings">設定</span></button></div>
+  </aside>
+
+  <section class="workspace">
+    <header class="header">
+      <button class="icon-btn menu" id="openSidebar" aria-label="メニュー">☰</button>
+      <div class="header-title">ALIFO AI</div>
+      <button class="language" id="language">English</button>
+    </header>
+
+    <main class="chat">
+      <div id="empty" class="empty">
+        <div class="big-logo">A</div>
+        <div class="pill">ALIFO AI</div>
+        <h1 data-ja="何をお手伝いしましょう？" data-en="How can I help you?">何をお手伝いしましょう？</h1>
+        <p data-ja="質問、雑談、アイデア、勉強、文章作成、画像を添付して相談することもできます。質問、雑談、アイデア、勉強、文章作成、画像生成などを自由に相談できます。" data-en="Ask questions, chat, brainstorm, study, write text, create images, and more.">質問、雑談、アイデア、勉強、文章作成、画像を添付して相談することもできます。質問、雑談、アイデア、勉強、文章作成、画像生成などを自由に相談できます。</p>
+        <div class="quick">
+          <button data-prompt-ja="文化祭でできる面白いアイデアを3つ考えて" data-prompt-en="Give me three interesting project ideas">💡 <span data-ja="アイデアを出す" data-en="Brainstorm">アイデアを出す</span></button>
+          <button data-prompt-ja="英語を楽しく勉強する方法を3つ教えて" data-prompt-en="Give me three fun ways to study English">📚 <span data-ja="勉強について聞く" data-en="Study help">勉強について聞く</span></button>
+          <button data-prompt-ja="学校で使える自己紹介文を作って" data-prompt-en="Write a short self introduction for school">✍️ <span data-ja="文章を書く" data-en="Write text">文章を書く</span></button>
+        </div>
+      </div>
+      <div id="messages" class="messages"></div>
+    </main>
+
+    <div class="composer-wrap">
+      <form id="form" class="composer" autocomplete="off">
+        <input id="imageInput" type="file" accept="image/*" hidden>
+        <button id="attachImage" type="button" title="画像を添付" aria-label="画像を添付">📎</button>
+        <textarea id="prompt" rows="1" maxlength="2000" data-placeholder-ja="ALIFO AIにメッセージを送る..." data-placeholder-en="Message ALIFO AI..." aria-label="メッセージ"></textarea>
+        <button id="generateImage" type="button" title="画像を生成" aria-label="画像を生成">🖼</button>
+        <button id="send" type="submit" aria-label="送信">↑</button>
+      </form>
+      <div class="disclaimer"><span id="localAiStatus" data-ja="端末内AIを準備します。初回はAIモデルのダウンロードがあります。" data-en="Preparing on-device AI. The first use downloads the AI model.">端末内AIを準備します。初回はAIモデルのダウンロードがあります。</span><br><span data-ja="会話は対応ブラウザ上でAIモデルを実行します。画像生成は外部の画像サービスを利用します。" data-en="Chat runs an AI model in your browser. Image generation uses an external image service.">会話は対応ブラウザ上でAIモデルを実行します。画像生成は外部の画像サービスを利用します。</span></div>
+    </div>
+  </section>
+</div>
+
+<div class="modal hidden" id="settings">
+  <div class="modal-box">
+    <div class="modal-head"><h2 data-ja="設定" data-en="Settings">設定</h2><button class="icon-btn" id="closeSettings" aria-label="閉じる">×</button></div>
+    <label><span data-ja="言語" data-en="Language">言語</span><select id="settingLanguage"><option value="ja">日本語</option><option value="en">English</option></select></label>
+    <button class="danger" id="clearHistory" data-ja="チャット履歴をすべて削除" data-en="Delete all chat history">チャット履歴をすべて削除</button>
+  </div>
+</div>
+<script type="module" src="/src/app.js"></script>
+</body>
+</html>
