@@ -17,8 +17,8 @@ try {
   if (Array.isArray(parsed)) chats = parsed.filter(c => c && typeof c === "object" && Array.isArray(c.messages));
 } catch { chats = []; }
 
-// CPU/WASM mode: load Transformers.js from a CDN at runtime so the server build
-// does not need the package installed. WebGPU is never requested.
+// AI priority: external AI -> WebGPU -> CPU/WASM -> built-in fallback.
+// No API key is stored by ALIFO AI.
 let aiWorker = null;
 let aiWorkerPromise = null;
 let aiRequestId = 0;
@@ -29,9 +29,7 @@ const LOCAL_MODEL = {
 };
 
 function createAIWorker() {
-  if (!aiWorker) {
-    aiWorker = new Worker(new URL("./ai-worker.js", import.meta.url), { type: "module" });
-  }
+  if (!aiWorker) aiWorker = new Worker(new URL("./ai-worker.js", import.meta.url), { type: "module" });
   return aiWorker;
 }
 
@@ -43,17 +41,15 @@ function getLocalEngine() {
       const d = event.data || {};
       if (d.type === "progress") {
         const el = document.querySelector("#localAiStatus");
-        if (el && Number.isFinite(d.progress)) el.textContent = language === "ja" ? `端末内AI（CPU/WASM）を準備中… ${Math.round(d.progress)}%` : `Preparing on-device AI (CPU/WASM)… ${Math.round(d.progress)}%`;
+        if (el && Number.isFinite(d.progress)) el.textContent = language === "ja" ? `端末内AI（${d.runtime === "webgpu" ? "WebGPU" : "CPU/WASM"}）を準備中… ${Math.round(d.progress)}%` : `Preparing on-device AI (${d.runtime === "webgpu" ? "WebGPU" : "CPU/WASM"})… ${Math.round(d.progress)}%`;
         return;
       }
       if (d.type === "ready") {
         worker.removeEventListener("message", onMessage);
-        resolve({
-          generate: (payload, onChunk) => generateInWorker(worker, payload, onChunk)
-        });
+        resolve({ runtime: d.runtime, generate: (payload, onChunk) => generateInWorker(worker, payload, onChunk) });
       } else if (d.type === "error" && d.scope === "init") {
         worker.removeEventListener("message", onMessage);
-        reject(new Error(d.message || "CPU/WASM AI initialization failed"));
+        reject(Object.assign(new Error(d.message || "Local AI initialization failed"), { runtime: d.runtime || "unknown" }));
       }
     };
     worker.addEventListener("message", onMessage);
@@ -69,43 +65,40 @@ function generateInWorker(worker, payload, onChunk) {
       const d = event.data || {};
       if (d.id !== id) return;
       if (d.type === "chunk") onChunk?.(d.text || "");
-      else if (d.type === "done") {
-        worker.removeEventListener("message", handler);
-        resolve(d.text || "");
-      } else if (d.type === "error") {
-        worker.removeEventListener("message", handler);
-        reject(new Error(d.message || "CPU/WASM generation failed"));
-      }
+      else if (d.type === "done") { worker.removeEventListener("message", handler); resolve(d.text || ""); }
+      else if (d.type === "error") { worker.removeEventListener("message", handler); reject(Object.assign(new Error(d.message || "Local AI generation failed"), { runtime: d.runtime || "unknown" })); }
     };
     worker.addEventListener("message", handler);
     worker.postMessage({ type: "generate", id, ...payload });
   });
 }
 
-function setExternalAiStatus(state) {
+function setAiStatus(state, runtime = "external") {
   const badge = document.querySelector("#externalAiBadge");
   const text = document.querySelector("#externalAiBadgeText");
   const footer = document.querySelector("#localAiStatus");
   if (!badge || !text) return;
   badge.classList.remove("connected", "connecting", "error");
   const labels = {
-    ja: { connected: "外部AI接続中", connecting: "外部AIに接続中…", error: "外部AI接続エラー" },
-    en: { connected: "External AI connected", connecting: "Connecting to external AI…", error: "External AI connection error" }
+    ja: {
+      external: "外部AI接続中", webgpu: "WebGPU AI実行中", cpu: "CPU/WASM AI実行中", fallback: "内蔵AIで回答中", connecting: "AIに接続中…", error: "AI接続エラー"
+    },
+    en: {
+      external: "External AI connected", webgpu: "WebGPU AI running", cpu: "CPU/WASM AI running", fallback: "Built-in AI answering", connecting: "Connecting to AI…", error: "AI connection error"
+    }
   };
-  const label = labels[language]?.[state] || labels.ja[state] || labels.ja.connecting;
-  badge.classList.add(state);
+  const key = labels[language] || labels.ja;
+  const label = key[runtime] || key[state] || key.connecting;
+  badge.classList.add(state === "error" ? "error" : state === "connecting" ? "connecting" : "connected");
   text.textContent = label;
   if (footer) footer.textContent = language === "ja"
-    ? (state === "connected" ? "外部AI（Puter）で接続中・APIキー不要" : state === "error" ? "外部AIに接続できません。再読み込みしてください。" : "外部AI（Puter）に接続中…")
-    : (state === "connected" ? "External AI (Puter) connected · no API key required" : state === "error" ? "Could not connect to external AI. Please reload." : "Connecting to external AI (Puter)…");
+    ? (runtime === "external" ? "外部AI（Puter）を使用中・APIキー不要" : runtime === "webgpu" ? "端末内AI（WebGPU）を使用中" : runtime === "cpu" ? "端末内AI（CPU/WASM）を使用中" : runtime === "fallback" ? "内蔵AIへ自動切り替え中" : "AIに接続中…")
+    : (runtime === "external" ? "Using external AI (Puter) · no API key required" : runtime === "webgpu" ? "Using on-device AI (WebGPU)" : runtime === "cpu" ? "Using on-device AI (CPU/WASM)" : runtime === "fallback" ? "Using built-in AI fallback" : "Connecting to AI…");
 }
 
 function checkExternalAi() {
-  if (window.puter?.ai?.chat) {
-    setExternalAiStatus("connected");
-    return true;
-  }
-  setExternalAiStatus("connecting");
+  if (window.puter?.ai?.chat) { setAiStatus("connected", "external"); return true; }
+  setAiStatus("connecting", "connecting");
   return false;
 }
 
@@ -122,7 +115,7 @@ function applyLanguage() {
   $("#language").textContent = language === "ja" ? "English" : "日本語";
   $("#settingLanguage").value = language;
   renderHistory();
-  if (window.puter?.ai?.chat) setExternalAiStatus("connected");
+  if (window.puter?.ai?.chat) setAiStatus("connected", "external");
 }
 function newChat() {
   currentId = Date.now().toString();
@@ -222,48 +215,53 @@ function historyWithSystem(history, system) {
 async function sendMessage(text) {
   const c = ensureChat();
   const attachment = pendingAttachment;
-  if (attachment) {
-    addAttachmentMessage(attachment.src, attachment.name, text, true);
-    pendingAttachment = null;
-    updateAttachmentState();
-  } else {
-    addMessage("user", text);
-  }
+  if (attachment) { addAttachmentMessage(attachment.src, attachment.name, text, true); pendingAttachment = null; updateAttachmentState(); }
+  else addMessage("user", text);
   const originalPrompt = text;
-  prompt.value = "";
-  prompt.style.height = "auto"; send.disabled = true;
+  prompt.value = ""; prompt.style.height = "auto"; send.disabled = true;
   const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
-  setExternalAiStatus("connecting");
   try {
-    // API-key-free cloud AI: Puter.js handles the user's authentication/session.
-    // The site never stores an OpenAI/Pollinations API key.
-    if (!window.puter?.ai?.chat) {
-      throw new Error(language === "ja" ? "外部AIの読み込みに失敗しました。ページを再読み込みしてください。" : "The external AI library could not be loaded. Please reload the page.");
-    }
-    const recent = c.messages
-      .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-      .slice(-20)
-      .map(m => ({ role: m.role, content: m.content.slice(0, 6000) }));
+    const recent = c.messages.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-20).map(m => ({ role: m.role, content: m.content.slice(0, 6000) }));
     const system = language === "ja"
       ? "あなたはALIFO AIです。今回のユーザーの依頼を主なタスクとして、自然で分かりやすく答えてください。前の会話は『それ』『これ』『もっと詳しく』など明確に参照している場合だけ使ってください。新しい依頼に古い話題を勝手に持ち込まないでください。作文を頼まれたら作文として答えてください。Web検索を実際にしていない場合は、検索したとは言わないでください。小学生〜高校生にも分かりやすく、安全で役立つ回答にしてください。"
       : "You are ALIFO AI. Answer the user's current request naturally and clearly. Use previous conversation only when the user clearly refers back to it. Do not carry an old topic into a new request. If the user asks for an essay, answer as an essay task. Do not claim to have browsed the web unless you actually did. Keep answers clear, safe, and age-appropriate.";
-    const response = await window.puter.ai.chat([
-      { role: "system", content: system },
-      ...recent
-    ], false, { model: "gpt-5.6-luna" });
-    const answer = typeof response === "string"
-      ? response.trim()
-      : String(response?.message?.content ?? response?.text ?? response?.content ?? "").trim();
-    if (!answer) throw new Error(language === "ja" ? "回答を受け取れませんでした。" : "No response was received.");
-    loading.querySelector(".bubble").textContent = answer;
-    c.messages.push({ role: "assistant", content: answer });
-    save();
-    setExternalAiStatus("connected");
+
+    // 1) External AI first.
+    if (window.puter?.ai?.chat) {
+      try {
+        setAiStatus("connecting", "external");
+        const response = await window.puter.ai.chat([{ role: "system", content: system }, ...recent], false, { model: "gpt-5.6-luna" });
+        const answer = typeof response === "string" ? response.trim() : String(response?.message?.content ?? response?.text ?? response?.content ?? "").trim();
+        if (!answer) throw new Error("No response");
+        loading.querySelector(".bubble").textContent = answer;
+        c.messages.push({ role: "assistant", content: answer }); save(); setAiStatus("connected", "external"); return;
+      } catch (externalError) {
+        console.warn("External AI failed; trying local AI", externalError);
+      }
+    }
+
+    // 2) WebGPU, then 3) CPU/WASM are selected automatically inside the local worker.
+    try {
+      const engine = await getLocalEngine();
+      setAiStatus("connected", engine.runtime === "webgpu" ? "webgpu" : "cpu");
+      const answer = await engine.generate({ messages: [{ role: "system", content: system }, ...recent] });
+      if (!answer?.trim()) throw new Error("Local AI returned an empty response");
+      loading.querySelector(".bubble").textContent = answer.trim();
+      c.messages.push({ role: "assistant", content: answer.trim() }); save(); return;
+    } catch (localError) {
+      console.warn("Local AI failed; using built-in fallback", localError);
+    }
+
+    // 4) Built-in server fallback.
+    setAiStatus("connected", "fallback");
+    const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: c.messages.slice(-30), language }) });
+    const data = await response.json();
+    if (!response.ok || !data.text) throw new Error(data.error || "Fallback failed");
+    loading.querySelector(".bubble").textContent = data.text;
+    c.messages.push({ role: "assistant", content: data.text }); save();
   } catch (e) {
-    loading.querySelector(".bubble").textContent = language === "ja"
-      ? `回答できませんでした。\n${e.message}`
-      : `I couldn't answer that.\n${e.message}`;
-    // Keep the typed text when a request fails.
+    setAiStatus("error", "error");
+    loading.querySelector(".bubble").textContent = language === "ja" ? `回答できませんでした。\n${e.message}` : `I couldn't answer that.\n${e.message}`;
     if (!prompt.value) { prompt.value = originalPrompt; prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 140) + "px"; }
   } finally { send.disabled = false; prompt.focus(); }
 }
@@ -300,7 +298,7 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
   }
 
-  add(language === "ja" ? "AI実行方式" : "AI execution", "Puter.js / GPT-5.6 Luna");
+  add(language === "ja" ? "AI実行優先順位" : "AI priority", "External AI → WebGPU → CPU/WASM → built-in fallback");
   add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "不要（Puterがユーザー認証を処理）" : "Not required (Puter handles user authentication)");
   try {
     const origin = location.origin;
@@ -308,7 +306,7 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
   } catch {}
 
-  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Puter.js / GPT-5.6 Luna (cloud AI)");
+  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "External AI → WebGPU → CPU/WASM → built-in fallback");
   const report = lines.join("\n");
   const title = language === "ja" ? "CPU/WASM実行環境の診断結果" : "CPU/WASM runtime diagnostic result";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";

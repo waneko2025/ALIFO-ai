@@ -69,3 +69,7 @@ ALIFO AIのチャットをPuter.js経由の外部AIに変更しました。サ�
 ### v5.3
 - ヘッダーに「外部AI接続中」ステータスを表示します。
 - Puter.js の利用可能状態・接続中・エラーを日本語/英語で表示します。
+
+
+## v5.4 AI fallback
+AI response priority is: external Puter AI → WebGPU local model → CPU/WASM local model → built-in server fallback. No OpenAI API key is required. The local model is loaded from the public Hugging Face model repository through Transformers.js.
