@@ -123,3 +123,11 @@ Configure optional server-side variables: `OPENAI_API_KEY`, `OPENAI_MODEL`, `GEM
 ## v6.7
 - Fixed a client-side `textOf is not defined` error in the relevance guard.
 - Replaced raw internal errors in the chat bubble with a simple user-facing message.
+
+
+## v6.8 timeout adjustment
+- Puter AI response timeout: 45 seconds
+- Local AI initialization timeout: 90 seconds
+- Local AI generation timeout: 60 seconds
+- Built-in server fallback timeout: 30 seconds
+These longer limits are intended to prevent slow model startup/downloads from being treated as failures too early.

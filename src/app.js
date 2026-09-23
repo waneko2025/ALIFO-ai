@@ -148,7 +148,7 @@ function getLocalEngine(forceWasm = false) {
     };
     // A browser-side model can take a while to download. If it has not
     // initialized after this period, continue to the built-in fallback.
-    const timeoutMs = 25000;
+    const timeoutMs = 90000;
     const timer = setTimeout(() => {
       worker.terminate();
       aiWorker = null;
@@ -498,14 +498,14 @@ async function sendMessage(text) {
 
       let answer;
       try {
-        answer = await generateWithTimeout(engine, { messages: aiMessages }, 20000);
+        answer = await generateWithTimeout(engine, { messages: aiMessages }, 60000);
       } catch (localError) {
         if (engine.runtime === "webgpu") {
           console.warn("WebGPU generation failed; switching to CPU/WASM", localError);
           setAiStatus("connecting", "cpu");
           engine = await getLocalEngine(true);
           setAiStatus("connected", "cpu");
-          answer = await generateWithTimeout(engine, { messages: aiMessages }, 20000);
+          answer = await generateWithTimeout(engine, { messages: aiMessages }, 60000);
         } else {
           throw localError;
         }
@@ -531,7 +531,7 @@ async function sendMessage(text) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: c.messages.slice(-30), language })
       },
-      15000
+      30000
     );
     const data = await fallbackResponse.json();
     if (!fallbackResponse.ok || !data.text) throw new Error(data.error || "Fallback failed");
