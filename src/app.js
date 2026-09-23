@@ -6,7 +6,7 @@
 
   function getStoredTheme() {
     const value = localStorage.getItem(KEY);
-    return value === "light" || value === "dark" ? value : null;
+    return value === "light" || value === "dark" || value === "system" ? value : null;
   }
 
   function systemTheme() {
@@ -14,26 +14,32 @@
       ? "dark" : "light";
   }
 
-  function applyTheme(theme, persist = true) {
-    root.dataset.theme = theme;
-    root.style.colorScheme = theme;
-    if (persist) localStorage.setItem(KEY, theme);
+  function applyTheme(choice, persist = true) {
+    const actual = choice === "system" ? systemTheme() : choice;
+    root.dataset.theme = actual;
+    root.style.colorScheme = actual;
+    if (persist) localStorage.setItem(KEY, choice);
     document.querySelectorAll("[data-theme-choice]").forEach((el) => {
-      el.setAttribute("aria-pressed", el.dataset.themeChoice === theme ? "true" : "false");
+      el.setAttribute("aria-pressed", el.dataset.themeChoice === choice ? "true" : "false");
     });
   }
 
   window.alifoSetTheme = function(theme) {
-    if (theme === "light" || theme === "dark") applyTheme(theme, true);
+    if (theme === "system" || theme === "light" || theme === "dark") {
+      applyTheme(theme, true);
+    }
   };
 
-  applyTheme(getStoredTheme() || systemTheme(), false);
-  /* alifo-system-theme-listener: follow the OS theme until the user chooses one. */
+  const initial = getStoredTheme() || "system";
+  applyTheme(initial, false);
+
   const media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   if (media) {
-    media.addEventListener?.("change", () => {
-      if (!getStoredTheme()) applyTheme(systemTheme(), false);
-    });
+    const onSystemThemeChange = () => {
+      if ((getStoredTheme() || "system") === "system") applyTheme("system", false);
+    };
+    if (media.addEventListener) media.addEventListener("change", onSystemThemeChange);
+    else if (media.addListener) media.addListener(onSystemThemeChange);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
