@@ -110,3 +110,11 @@ Puter自体が利用できない場合、Puter経由のGPT/Gemini/Claudeも利�
 Puter remains first. If Puter is unavailable, the server can optionally try official direct connections in this order: OpenAI (ChatGPT models) → Google Gemini → Anthropic Claude. These are independent of Puter. They are disabled unless the corresponding server-side environment variables are configured. API keys are never sent to the browser. If no direct provider is configured or all direct providers fail, ALIFO AI continues to WebGPU → CPU/WASM → built-in fallback.
 
 Configure optional server-side variables: `OPENAI_API_KEY`, `OPENAI_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`.
+
+
+## v6.5 — no direct provider API keys
+- Puter AI is the external AI layer: GPT → Gemini → Claude.
+- No OpenAI/Gemini/Anthropic API keys are used by ALIFO AI.
+- If Puter is unavailable, ALIFO AI falls back to WebGPU, then CPU/WASM, then a conservative built-in fallback.
+- Local-model answers are rejected when they appear unrelated to the user's current question.
+- For factual/current questions, the final fallback refuses to guess instead of inventing an answer.

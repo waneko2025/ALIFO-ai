@@ -408,116 +408,16 @@ async function knowledgeReply(messages, language) {
 
 
 
-function externalApiConfigured() {
-  return !!(process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY);
-}
-
-function messagesForProvider(messages = []) {
-  return messages
-    .filter(m => m && (m.role === 'system' || m.role === 'user' || m.role === 'assistant'))
-    .map(m => ({ role: m.role, content: textOf(m.content).slice(0, 8000) }))
-    .filter(m => m.content);
-}
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function openAiDirectReply(messages) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error('OpenAI direct connection is not configured');
-  const model = process.env.OPENAI_MODEL || 'gpt-5.6-luna';
-  const response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, input: messagesForProvider(messages).slice(-20), max_output_tokens: 1200 })
-  }, 20000);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`OpenAI ${response.status}`);
-  const text = data.output_text || (Array.isArray(data.output) ? data.output.flatMap(x => x.content || []).map(x => x.text || '').join('\n') : '');
-  if (!text.trim()) throw new Error('OpenAI returned an empty response');
-  return { text: text.trim(), provider: 'openai', model };
-}
-
-async function geminiDirectReply(messages) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('Gemini direct connection is not configured');
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const clean = messagesForProvider(messages).slice(-20);
-  const system = clean.find(m => m.role === 'system')?.content || '';
-  const contents = clean.filter(m => m.role !== 'system').map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }]
-  }));
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
-  const response = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-      contents,
-      generationConfig: { temperature: 0.2, maxOutputTokens: 1200 }
-    })
-  }, 20000);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Gemini ${response.status}`);
-  const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('\n').trim();
-  if (!text) throw new Error('Gemini returned an empty response');
-  return { text, provider: 'gemini', model };
-}
-
-async function claudeDirectReply(messages) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('Claude direct connection is not configured');
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
-  const clean = messagesForProvider(messages).slice(-20);
-  const system = clean.find(m => m.role === 'system')?.content || '';
-  const providerMessages = clean.filter(m => m.role !== 'system').map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
-  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ model, max_tokens: 1200, ...(system ? { system } : {}), messages: providerMessages })
-  }, 20000);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Claude ${response.status}`);
-  const text = (data.content || []).map(x => x.text || '').join('\n').trim();
-  if (!text) throw new Error('Claude returned an empty response');
-  return { text, provider: 'claude', model };
-}
-
-async function directExternalReply(messages) {
-  const attempts = [
-    ['openai', openAiDirectReply],
-    ['gemini', geminiDirectReply],
-    ['claude', claudeDirectReply]
-  ];
-  let lastError = null;
-  for (const [name, fn] of attempts) {
-    try {
-      if (name === 'openai' && !process.env.OPENAI_API_KEY) continue;
-      if (name === 'gemini' && !process.env.GEMINI_API_KEY) continue;
-      if (name === 'claude' && !process.env.ANTHROPIC_API_KEY) continue;
-      return await fn(messages);
-    } catch (err) {
-      lastError = err;
-      console.warn(`Direct ${name} connection failed`, err);
-    }
-  }
-  throw lastError || new Error('No direct external AI connection is configured');
-}
-
 function smartReply(messages, language) {
   const q = lastUser(messages);
+  // Never fabricate an answer to a factual/current question when the external
+  // and on-device models have failed. This is safer than returning an
+  // unrelated canned answer.
+  if (isQuestionLike(q) || containsAny(q, ["最新", "今日", "現在", "ニュース", "政治", "選挙", "放送", "発売", "価格", "誰", "どこ", "いつ"])) {
+    return language === "en"
+      ? "I couldn't verify that information right now. I don't want to guess and give you an incorrect answer."
+      : "今はその情報を確認できませんでした。間違った情報を推測で答えないように、ここでは断定しません。";
+  }
   return language === "en" ? smartEnglish(q, messages) : smartJapanese(q, messages);
 }
 
