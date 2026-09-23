@@ -9,6 +9,12 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+
+<div class="alifo-theme-controls" data-theme-controls role="group" aria-label="Theme">
+  <button type="button" data-theme-choice="light" aria-label="ライトモード" aria-pressed="false">☀️</button>
+  <button type="button" data-theme-choice="dark" aria-label="ダークモード" aria-pressed="false">🌙</button>
+</div>
+
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="side-top">
@@ -19,11 +25,6 @@
     <div class="history-title" data-ja="チャット履歴" data-en="Chat history">チャット履歴</div>
     <div id="history" class="history"></div>
     <div class="side-bottom"><button class="side-btn" id="settingsBtn">⚙ <span data-ja="設定" data-en="Settings">設定</span></button></div>
-  
-<a class="alifo-media-link" href="https://alifo-media.com/" target="_blank" rel="noopener noreferrer" aria-label="ALIFOmediaニュース">
-  <span aria-hidden="true">📰</span>
-  <span data-i18n="alifoMedia">ALIFOmediaニュース</span>
-</a>
 </aside>
 
   <section class="workspace">
@@ -72,6 +73,7 @@
 </div>
 <script src="https://js.puter.com/v2/"></script>
 <script type="module" src="/src/app.js"></script>
-<footer class="alifo-media-footer"><a href="https://alifo-media.com/" target="_blank" rel="noopener noreferrer" class="alifo-media-footer-link">📰 ALIFOmediaニュース</a></footer>
+<footer class="alifo-media-footer">
+</footer>
 </body>
 </html>

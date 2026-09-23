@@ -1,3 +1,45 @@
+
+/* ALIFO AI theme preference: system on first visit, then persist the user's choice. */
+(function initAlifoTheme() {
+  const KEY = "alifo-theme";
+  const root = document.documentElement;
+
+  function getStoredTheme() {
+    const value = localStorage.getItem(KEY);
+    return value === "light" || value === "dark" ? value : null;
+  }
+
+  function systemTheme() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark" : "light";
+  }
+
+  function applyTheme(theme, persist = true) {
+    root.dataset.theme = theme;
+    root.style.colorScheme = theme;
+    if (persist) localStorage.setItem(KEY, theme);
+    document.querySelectorAll("[data-theme-choice]").forEach((el) => {
+      el.setAttribute("aria-pressed", el.dataset.themeChoice === theme ? "true" : "false");
+    });
+  }
+
+  window.alifoSetTheme = function(theme) {
+    if (theme === "light" || theme === "dark") applyTheme(theme, true);
+  };
+
+  applyTheme(getStoredTheme() || systemTheme(), false);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const host = document.querySelector("[data-theme-controls]");
+    if (!host) return;
+    host.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-theme-choice]");
+      if (!button) return;
+      applyTheme(button.dataset.themeChoice, true);
+    });
+  });
+})();
+
 // ALIFO AI v4.3 stable state initialization
 const $ = (sel) => document.querySelector(sel);
 const messages = $("#messages");
