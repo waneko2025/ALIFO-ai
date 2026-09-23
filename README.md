@@ -86,15 +86,20 @@ ALIFO AI attempts replies in this order:
 If external AI registration/login is refused, the connection fails, or the external request times out, ALIFO AI automatically continues to the local model. If WebGPU generation itself fails after initialization, it explicitly restarts the local model in CPU/WASM mode before using the built-in server fallback.
 
 
-## v6.2: チャットの外部AI/APIを使わないモード
+## v6.2: Puter AI + ローカルAI 自動フォールバック
 
-この版では、チャット回答にPuter.jsやOpenAIなどの外部AI APIを使用しません。
+この版では、Puter.jsを最初のAI経路として使用します。ALIFO AI側にOpenAI/Gemini/ClaudeのAPIキーを保存しません。Puterが公開しているモデル一覧から、GPT系 → Gemini系 → Claude系の順に利用を試し、利用できなければ端末内AIへ自動で切り替えます。
 
 AIの順番:
-1. WebGPUで端末内モデルを実行
-2. WebGPUが使えない場合はCPU/WASMで同じ端末内モデルを実行
-3. 端末内モデルも利用できない場合は、サーバー内の軽量フォールバックで回答
+1. Puter経由のGPT系モデル
+2. Puter経由のGemini系モデル
+3. Puter経由のClaude系モデル
+4. WebGPUで端末内モデル
+5. CPU/WASMで端末内モデル
+6. サーバー内の軽量フォールバック
 
-モデルはTransformers.js経由でブラウザにダウンロードされ、推論はユーザーの端末上で行います。初回はモデルのダウンロードが必要です。APIキーは不要です。
+事実確認が重要な質問では、GPT系モデルが利用可能な場合にPuterのWeb検索機能を使用します。Web検索を実行できない場合は、AIに推測で断定しないよう指示します。
+
+Puter自体が利用できない場合、Puter経由のGPT/Gemini/Claudeも利用できないため、端末内AIへ切り替えます。Puterとは独立したChatGPT/Gemini/ClaudeのAPIを追加する場合は、それぞれの正式なAPI接続が必要です。
 
 ※画像生成は従来どおり外部画像サービスを利用します。

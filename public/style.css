@@ -185,4 +185,5 @@ body {
 }
 
 /* Provider status is intentionally shown by color only. */
+.external-ai-badge.puter{background:#edf9f2;border-color:#ccebd9}.external-ai-badge.puter .external-ai-dot{background:#25a866;box-shadow:0 0 0 3px rgba(37,168,102,.12)}.external-ai-badge.webgpu{background:#eef3ff;border-color:#cbd8ff}.external-ai-badge.webgpu .external-ai-dot{background:#4f7cff;box-shadow:0 0 0 3px rgba(79,124,255,.12)}.external-ai-badge.cpu{background:#f2efff;border-color:#d9d0ff}.external-ai-badge.cpu .external-ai-dot{background:#7657d9;box-shadow:0 0 0 3px rgba(118,87,217,.12)}.external-ai-badge.fallback{background:#fff8e8;border-color:#f1dfaa}.external-ai-badge.fallback .external-ai-dot{background:#d49a19;box-shadow:0 0 0 3px rgba(212,154,25,.12)}.external-ai-badge.error .external-ai-dot{background:#c94a4a;box-shadow:0 0 0 3px rgba(201,74,74,.12)}
 .external-ai-badge #externalAiBadgeText{display:none}

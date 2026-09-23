@@ -72,8 +72,8 @@ try {
   if (Array.isArray(parsed)) chats = parsed.filter(c => c && typeof c === "object" && Array.isArray(c.messages));
 } catch { chats = []; }
 
-// AI priority: WebGPU local model -> CPU/WASM local model -> built-in fallback.
-// No external AI API or API key is used for chat.
+// AI priority: Puter AI (GPT/Gemini/Claude models) -> WebGPU local model -> CPU/WASM local model -> built-in fallback.
+// No provider-specific API key is stored in ALIFO AI. Puter handles the external AI connection.
 let aiWorker = null;
 let aiWorkerPromise = null;
 let aiRequestId = 0;
@@ -172,28 +172,103 @@ function setAiStatus(state, runtime = "external") {
   const badge = document.querySelector("#externalAiBadge");
   const text = document.querySelector("#externalAiBadgeText");
   const footer = document.querySelector("#localAiStatus");
-  if (!badge || !text) return;
-  badge.classList.remove("connected", "connecting", "error");
-  const labels = {
-    ja: {
-      external: "外部AIなし", webgpu: "WebGPU AI実行中", cpu: "CPU/WASM AI実行中", fallback: "内蔵AIで回答中", connecting: "端末内AIを準備中…", error: "AI実行エラー"
-    },
-    en: {
-      external: "No external AI", webgpu: "WebGPU AI running", cpu: "CPU/WASM AI running", fallback: "Built-in AI answering", connecting: "Preparing on-device AI…", error: "AI runtime error"
-    }
-  };
-  const key = labels[language] || labels.ja;
-  const label = key[runtime] || key[state] || key.connecting;
-  badge.classList.add(state === "error" ? "error" : state === "connecting" ? "connecting" : "connected");
-  text.textContent = label;
-  if (footer) footer.textContent = language === "ja"
-    ? (runtime === "external" ? "外部AIは使用しません" : runtime === "webgpu" ? "端末内AI（WebGPU）を使用中" : runtime === "cpu" ? "端末内AI（CPU/WASM）を使用中" : runtime === "fallback" ? "端末内AIが使えないため内蔵AIへ切り替え中" : "端末内AIを準備中…")
-    : (runtime === "external" ? "External AI is disabled" : runtime === "webgpu" ? "Using on-device AI (WebGPU)" : runtime === "cpu" ? "Using on-device AI (CPU/WASM)" : runtime === "fallback" ? "Using built-in fallback because on-device AI is unavailable" : "Preparing on-device AI…");
+  if (!badge) return;
+  badge.classList.remove("connected", "connecting", "error", "puter", "webgpu", "cpu", "fallback");
+  const cls = runtime === "puter" ? "puter" : runtime === "webgpu" ? "webgpu" : runtime === "cpu" ? "cpu" : runtime === "fallback" ? "fallback" : state;
+  badge.classList.add(cls);
+  if (text) text.textContent = "";
+  if (footer) footer.textContent = "";
 }
 
 function checkExternalAi() {
-  setAiStatus("connecting", "connecting");
-  return false;
+  return !!window.puter?.ai?.chat;
+}
+
+function extractPuterText(result) {
+  const content = result?.message?.content ?? result?.content ?? result?.text ?? result;
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content.map(part => {
+      if (typeof part === "string") return part;
+      return part?.text || part?.content || "";
+    }).join("\n").trim();
+  }
+  return "";
+}
+
+async function getPuterModels() {
+  if (!window.puter?.ai?.listModels) return [];
+  try {
+    return await withTimeout(window.puter.ai.listModels(), 6000, "Puter model list timed out");
+  } catch { return []; }
+}
+
+function pickPuterModel(models, kind) {
+  const list = Array.isArray(models) ? models : [];
+  const providerMatch = kind === "gpt"
+    ? m => /openai/i.test(`${m?.provider || ""} ${m?.id || ""}`)
+    : kind === "gemini"
+      ? m => /google|gemini/i.test(`${m?.provider || ""} ${m?.id || ""}`)
+      : m => /anthropic|claude/i.test(`${m?.provider || ""} ${m?.id || ""}`);
+  const preferred = kind === "gpt"
+    ? ["gpt-5.6-luna", "openai/gpt-5.6-luna", "gpt-5.5"]
+    : kind === "gemini"
+      ? ["gemini-3.1-flash-lite", "gemini-3.1-flash", "gemini-3.0-flash"]
+      : ["claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6"];
+  for (const wanted of preferred) {
+    const exact = list.find(m => String(m?.id || "").toLowerCase() === wanted.toLowerCase());
+    if (exact?.id) return exact.id;
+  }
+  return list.find(m => providerMatch(m))?.id || preferred[0] || null;
+}
+
+function isFactualQuestion(q = "") {
+  return isQuestionLike(q) || containsAny(q, ["最新", "今日", "現在", "いつ", "誰", "どこ", "ニュース", "発売", "放送", "価格", "値段", "公式"]);
+}
+
+function isQuestionLike(q = "") {
+  return /[?？]$/.test(q) || containsAny(q, ["なぜ", "どうして", "どうやって", "とは", "って何", "教えて", "説明して", "分かる", "わかる", "誰", "どこ", "いつ"]);
+}
+
+function qualitySystemPrompt() {
+  return language === "ja"
+    ? "あなたはALIFO AIです。ユーザーの現在の依頼を最優先してください。前の会話は明確に参照された場合だけ使います。事実を推測で埋めないでください。存在・人物・番組・商品・日付などを確認できない場合は、分からないと明確に伝えてください。最新情報については、利用できるWeb検索がある場合のみ検索し、検索していないのに検索したとは言わないでください。根拠が弱い情報を断定しないでください。質問には直接答え、必要なら短い注意書きを添えてください。日本語で自然に、分かりやすく、安全に答えてください。"
+    : "You are ALIFO AI. Prioritize the user's current request. Use previous conversation only when clearly referenced. Never fill factual gaps by guessing. If you cannot verify a person, show, product, date, or other fact, say that you cannot verify it. For current information, use web search when available; never claim to have searched when you did not. Do not state weakly supported facts as certain. Answer directly and clearly in English.";
+}
+
+async function puterReply(messages) {
+  if (!window.puter?.ai?.chat) throw new Error("Puter AI unavailable");
+  const models = await getPuterModels();
+  const order = ["gpt", "gemini", "claude"];
+  const factual = isFactualQuestion(messages.filter(m => m?.role === "user").at(-1)?.content || "");
+  let lastError = null;
+
+  for (const kind of order) {
+    const model = pickPuterModel(models, kind);
+    if (!model) continue;
+    try {
+      const options = {
+        model,
+        normalize: true,
+        max_tokens: 1200,
+        temperature: 0.2
+      };
+      // Puter documents web_search for OpenAI models. Use it only for questions
+      // that benefit from current/factual verification.
+      if (kind === "gpt" && factual) options.tools = [{ type: "web_search" }];
+      const result = await withTimeout(
+        window.puter.ai.chat(messages, options),
+        18000,
+        `${kind} response timed out`
+      );
+      const text = extractPuterText(result);
+      if (text) return { text, kind, model };
+    } catch (err) {
+      lastError = err;
+      console.warn(`Puter ${kind} model failed`, err);
+    }
+  }
+  throw lastError || new Error("No usable Puter AI model");
 }
 
 function save() {
@@ -297,7 +372,7 @@ async function generateImage() {
     const d = await r.json(); if (!r.ok) throw Error(d.error || "Image request failed");
     loading.remove(); addImageMessage(d.image, text, true);
   } catch (e) {
-    setExternalAiStatus("error");
+    setAiStatus("error", "error");
     loading.querySelector(".bubble").textContent = language === "ja" ? `画像生成エラー: ${e.message}` : `Image error: ${e.message}`;
   } finally { send.disabled = false; generateImageBtn.disabled = false; prompt.focus(); }
 }
@@ -339,11 +414,25 @@ async function sendMessage(text) {
   const loading = addMessage("ai", language === "ja" ? "考えています…" : "Thinking…", false);
   try {
     const recent = c.messages.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-20).map(m => ({ role: m.role, content: m.content.slice(0, 6000) }));
-    const system = language === "ja"
-      ? "あなたはALIFO AIです。今回のユーザーの依頼を主なタスクとして、自然で分かりやすく答えてください。前の会話は『それ』『これ』『もっと詳しく』など明確に参照している場合だけ使ってください。新しい依頼に古い話題を勝手に持ち込まないでください。作文を頼まれたら作文として答えてください。Web検索を実際にしていない場合は、検索したとは言わないでください。小学生〜高校生にも分かりやすく、安全で役立つ回答にしてください。"
-      : "You are ALIFO AI. Answer the user's current request naturally and clearly. Use previous conversation only when the user clearly refers back to it. Do not carry an old topic into a new request. If the user asks for an essay, answer as an essay task. Do not claim to have browsed the web unless you actually did. Keep answers clear, safe, and age-appropriate.";
+    const system = qualitySystemPrompt();
+    const aiMessages = [{ role: "system", content: system }, ...recent];
 
-    // 1) WebGPU, then 2) CPU/WASM. No external AI/API is used.
+    // 1) Puter AI: try GPT, then Gemini, then Claude. These are accessed
+    // through Puter.js, so ALIFO AI does not store provider API keys.
+    try {
+      setAiStatus("connecting", "puter");
+      const result = await puterReply(aiMessages);
+      setAiStatus("connected", "puter");
+      const answer = result.text.trim();
+      loading.querySelector(".bubble").textContent = answer;
+      c.messages.push({ role: "assistant", content: answer });
+      save();
+      return;
+    } catch (externalError) {
+      console.warn("Puter AI failed; falling back to on-device AI", externalError);
+    }
+
+    // 2) WebGPU, then 3) CPU/WASM local model.
     try {
       setAiStatus("connecting", "webgpu");
       let engine = await getLocalEngine();
@@ -351,22 +440,14 @@ async function sendMessage(text) {
 
       let answer;
       try {
-        answer = await generateWithTimeout(
-          engine,
-          { messages: [{ role: "system", content: system }, ...recent] },
-          20000
-        );
+        answer = await generateWithTimeout(engine, { messages: aiMessages }, 20000);
       } catch (localError) {
         if (engine.runtime === "webgpu") {
           console.warn("WebGPU generation failed; switching to CPU/WASM", localError);
           setAiStatus("connecting", "cpu");
           engine = await getLocalEngine(true);
           setAiStatus("connected", "cpu");
-          answer = await generateWithTimeout(
-            engine,
-            { messages: [{ role: "system", content: system }, ...recent] },
-            20000
-          );
+          answer = await generateWithTimeout(engine, { messages: aiMessages }, 20000);
         } else {
           throw localError;
         }
@@ -381,7 +462,7 @@ async function sendMessage(text) {
       console.warn("Local AI failed; using built-in fallback", localError);
     }
 
-    // 3) Built-in server fallback.
+    // 4) Built-in server fallback.
     setAiStatus("connected", "fallback");
     const fallbackResponse = await fetchWithTimeout(
       "/api/chat",
@@ -436,15 +517,15 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
   }
 
-  add(language === "ja" ? "AI実行優先順位" : "AI priority", "WebGPU → CPU/WASM → built-in fallback");
-  add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "不要（外部AI APIを使いません）" : "Not required (no external AI API is used)");
+  add(language === "ja" ? "AI実行優先順位" : "AI priority", "Puter GPT → Puter Gemini → Puter Claude → WebGPU → CPU/WASM → built-in fallback");
+  add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "ALIFO AI側では保存しません（Puter.jsを使用）" : "Not stored by ALIFO AI (uses Puter.js)");
   try {
     const origin = location.origin;
     add(language === "ja" ? "ALIFO AIのオリジン" : "ALIFO AI origin", origin);
     add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
   } catch {}
 
-  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "WebGPU → CPU/WASM → built-in fallback");
+  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Puter GPT → Gemini → Claude → WebGPU → CPU/WASM → built-in fallback");
   const report = lines.join("\n");
   const title = language === "ja" ? "CPU/WASM実行環境の診断結果" : "CPU/WASM runtime diagnostic result";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";
