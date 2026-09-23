@@ -55,6 +55,19 @@
 
 // ALIFO AI v4.3 stable state initialization
 const $ = (sel) => document.querySelector(sel);
+
+// Normalize AI/user text safely on the client. Keep this local because the
+// relevance guard runs before any answer is rendered.
+function textOf(value) {
+  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
+  if (value == null) return "";
+  if (Array.isArray(value)) return value.map(textOf).filter(Boolean).join(" ");
+  if (typeof value === "object") {
+    if (typeof value.text === "string") return textOf(value.text);
+    if (typeof value.content === "string") return textOf(value.content);
+  }
+  return String(value).replace(/\s+/g, " ").trim();
+}
 const messages = $("#messages");
 const empty = $("#empty");
 const prompt = $("#prompt");
@@ -529,7 +542,9 @@ async function sendMessage(text) {
     save();
   } catch (e) {
     setAiStatus("error", "error");
-    loading.querySelector(".bubble").textContent = language === "ja" ? `回答できませんでした。\n${e.message}` : `I couldn't answer that.\n${e.message}`;
+    loading.querySelector(".bubble").textContent = language === "ja"
+      ? "質問に関係する回答を生成できませんでした。もう一度質問してみてください。"
+      : "I could not generate a relevant answer. Please try asking again.";
     if (!prompt.value) { prompt.value = originalPrompt; prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 140) + "px"; }
   } finally { send.disabled = false; prompt.focus(); }
 }

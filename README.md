@@ -118,3 +118,8 @@ Configure optional server-side variables: `OPENAI_API_KEY`, `OPENAI_MODEL`, `GEM
 - If Puter is unavailable, ALIFO AI falls back to WebGPU, then CPU/WASM, then a conservative built-in fallback.
 - Local-model answers are rejected when they appear unrelated to the user's current question.
 - For factual/current questions, the final fallback refuses to guess instead of inventing an answer.
+
+
+## v6.7
+- Fixed a client-side `textOf is not defined` error in the relevance guard.
+- Replaced raw internal errors in the chat bubble with a simple user-facing message.
