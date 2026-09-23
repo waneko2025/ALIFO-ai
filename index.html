@@ -31,7 +31,7 @@
   <section class="workspace">
     <header class="header">
       <button class="icon-btn menu" id="openSidebar" aria-label="メニュー">☰</button>
-      <div class="header-title-row"><div class="header-title">ALIFO AI</div><div id="externalAiBadge" class="external-ai-badge connecting" aria-live="polite"><span class="external-ai-dot" aria-hidden="true"></span><span id="externalAiBadgeText" data-ja="外部AI接続中" data-en="External AI connected">外部AI接続中</span></div></div>
+      <div class="header-title-row"><div class="header-title">ALIFO AI</div><div id="externalAiBadge" class="external-ai-badge connecting" aria-live="polite"><span class="external-ai-dot" aria-hidden="true"></span><span id="externalAiBadgeText" data-ja="端末内AIを準備中…" data-en="Preparing on-device AI…">外部AI接続中</span></div></div>
       <button class="language" id="language">English</button>
     </header>
 
@@ -58,7 +58,7 @@
         <button id="generateImage" type="button" title="画像を生成" aria-label="画像を生成">🖼</button>
         <button id="send" type="submit" aria-label="送信">↑</button>
       </form>
-      <div class="disclaimer"><span id="localAiStatus" data-ja="AIを準備しています…" data-en="Preparing AI…">AIを準備しています…</span><br><span data-ja="AIは 外部AI → WebGPU → CPU/WASM → 内蔵AI の順で自動切り替えます。APIキーはサイト側に保存しません。画像生成は外部の画像サービスを利用します。" data-en="AI automatically falls back: external AI → WebGPU → CPU/WASM → built-in AI. No API key is stored by this site. Image generation uses an external image service.">AIは 外部AI → WebGPU → CPU/WASM → 内蔵AI の順で自動切り替えます。APIキーはサイト側に保存しません。画像生成は外部の画像サービスを利用します。</span></div>
+      <div class="disclaimer"><span data-ja="AIの回答は必ずしも正しいとは限りません。" data-en="AI responses are not necessarily correct.">AIの回答は必ずしも正しいとは限りません。</span></div>
     </div>
   </section>
 </div>
@@ -88,7 +88,6 @@
     <button class="danger" id="clearHistory" data-ja="チャット履歴をすべて削除" data-en="Delete all chat history">チャット履歴をすべて削除</button>
   </div>
 </div>
-<script src="https://js.puter.com/v2/"></script>
 <script type="module" src="/src/app.js"></script>
 </body>
 </html>

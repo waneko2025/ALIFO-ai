@@ -72,8 +72,8 @@ try {
   if (Array.isArray(parsed)) chats = parsed.filter(c => c && typeof c === "object" && Array.isArray(c.messages));
 } catch { chats = []; }
 
-// AI priority: external AI -> WebGPU -> CPU/WASM -> built-in fallback.
-// No API key is stored by ALIFO AI.
+// AI priority: WebGPU local model -> CPU/WASM local model -> built-in fallback.
+// No external AI API or API key is used for chat.
 let aiWorker = null;
 let aiWorkerPromise = null;
 let aiRequestId = 0;
@@ -176,10 +176,10 @@ function setAiStatus(state, runtime = "external") {
   badge.classList.remove("connected", "connecting", "error");
   const labels = {
     ja: {
-      external: "外部AI接続中", webgpu: "WebGPU AI実行中", cpu: "CPU/WASM AI実行中", fallback: "内蔵AIで回答中", connecting: "AIに接続中…", error: "AI接続エラー"
+      external: "外部AIなし", webgpu: "WebGPU AI実行中", cpu: "CPU/WASM AI実行中", fallback: "内蔵AIで回答中", connecting: "端末内AIを準備中…", error: "AI実行エラー"
     },
     en: {
-      external: "External AI connected", webgpu: "WebGPU AI running", cpu: "CPU/WASM AI running", fallback: "Built-in AI answering", connecting: "Connecting to AI…", error: "AI connection error"
+      external: "No external AI", webgpu: "WebGPU AI running", cpu: "CPU/WASM AI running", fallback: "Built-in AI answering", connecting: "Preparing on-device AI…", error: "AI runtime error"
     }
   };
   const key = labels[language] || labels.ja;
@@ -187,12 +187,11 @@ function setAiStatus(state, runtime = "external") {
   badge.classList.add(state === "error" ? "error" : state === "connecting" ? "connecting" : "connected");
   text.textContent = label;
   if (footer) footer.textContent = language === "ja"
-    ? (runtime === "external" ? "外部AI（Puter）を使用中・APIキー不要" : runtime === "webgpu" ? "端末内AI（WebGPU）を使用中" : runtime === "cpu" ? "端末内AI（CPU/WASM）を使用中" : runtime === "fallback" ? "内蔵AIへ自動切り替え中" : "AIに接続中…")
-    : (runtime === "external" ? "Using external AI (Puter) · no API key required" : runtime === "webgpu" ? "Using on-device AI (WebGPU)" : runtime === "cpu" ? "Using on-device AI (CPU/WASM)" : runtime === "fallback" ? "Using built-in AI fallback" : "Connecting to AI…");
+    ? (runtime === "external" ? "外部AIは使用しません" : runtime === "webgpu" ? "端末内AI（WebGPU）を使用中" : runtime === "cpu" ? "端末内AI（CPU/WASM）を使用中" : runtime === "fallback" ? "端末内AIが使えないため内蔵AIへ切り替え中" : "端末内AIを準備中…")
+    : (runtime === "external" ? "External AI is disabled" : runtime === "webgpu" ? "Using on-device AI (WebGPU)" : runtime === "cpu" ? "Using on-device AI (CPU/WASM)" : runtime === "fallback" ? "Using built-in fallback because on-device AI is unavailable" : "Preparing on-device AI…");
 }
 
 function checkExternalAi() {
-  if (window.puter?.ai?.chat) { setAiStatus("connected", "external"); return true; }
   setAiStatus("connecting", "connecting");
   return false;
 }
@@ -210,7 +209,6 @@ function applyLanguage() {
   $("#language").textContent = language === "ja" ? "English" : "日本語";
   $("#settingLanguage").value = language;
   renderHistory();
-  if (window.puter?.ai?.chat) setAiStatus("connected", "external");
 }
 function newChat() {
   currentId = Date.now().toString();
@@ -345,32 +343,7 @@ async function sendMessage(text) {
       ? "あなたはALIFO AIです。今回のユーザーの依頼を主なタスクとして、自然で分かりやすく答えてください。前の会話は『それ』『これ』『もっと詳しく』など明確に参照している場合だけ使ってください。新しい依頼に古い話題を勝手に持ち込まないでください。作文を頼まれたら作文として答えてください。Web検索を実際にしていない場合は、検索したとは言わないでください。小学生〜高校生にも分かりやすく、安全で役立つ回答にしてください。"
       : "You are ALIFO AI. Answer the user's current request naturally and clearly. Use previous conversation only when the user clearly refers back to it. Do not carry an old topic into a new request. If the user asks for an essay, answer as an essay task. Do not claim to have browsed the web unless you actually did. Keep answers clear, safe, and age-appropriate.";
 
-    // 1) External AI first.
-    if (window.puter?.ai?.chat) {
-      try {
-        setAiStatus("connecting", "external");
-        const externalPromise = Promise.resolve(
-          window.puter.ai.chat([{ role: "system", content: system }, ...recent], false, { model: "gpt-5.6-luna" })
-        );
-        const response = await Promise.race([
-          externalPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error("External AI timeout")), 15000))
-        ]);
-        const answer = typeof response === "string"
-          ? response.trim()
-          : String(response?.message?.content ?? response?.text ?? response?.content ?? "").trim();
-        if (!answer) throw new Error("External AI returned an empty response");
-        loading.querySelector(".bubble").textContent = answer;
-        c.messages.push({ role: "assistant", content: answer });
-        save();
-        setAiStatus("connected", "external");
-        return;
-      } catch (externalError) {
-        console.warn("External AI failed; trying local AI", externalError);
-      }
-    }
-
-    // 2) WebGPU, then 3) CPU/WASM.
+    // 1) WebGPU, then 2) CPU/WASM. No external AI/API is used.
     try {
       setAiStatus("connecting", "webgpu");
       let engine = await getLocalEngine();
@@ -408,7 +381,7 @@ async function sendMessage(text) {
       console.warn("Local AI failed; using built-in fallback", localError);
     }
 
-    // 4) Built-in server fallback.
+    // 3) Built-in server fallback.
     setAiStatus("connected", "fallback");
     const fallbackResponse = await fetchWithTimeout(
       "/api/chat",
@@ -463,15 +436,15 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
   }
 
-  add(language === "ja" ? "AI実行優先順位" : "AI priority", "External AI → WebGPU → CPU/WASM → built-in fallback");
-  add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "不要（Puterがユーザー認証を処理）" : "Not required (Puter handles user authentication)");
+  add(language === "ja" ? "AI実行優先順位" : "AI priority", "WebGPU → CPU/WASM → built-in fallback");
+  add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "不要（外部AI APIを使いません）" : "Not required (no external AI API is used)");
   try {
     const origin = location.origin;
     add(language === "ja" ? "ALIFO AIのオリジン" : "ALIFO AI origin", origin);
     add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
   } catch {}
 
-  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "External AI → WebGPU → CPU/WASM → built-in fallback");
+  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "WebGPU → CPU/WASM → built-in fallback");
   const report = lines.join("\n");
   const title = language === "ja" ? "CPU/WASM実行環境の診断結果" : "CPU/WASM runtime diagnostic result";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";
@@ -535,8 +508,7 @@ document.querySelectorAll(".quick button").forEach(b => b.onclick = () => sendMe
 
 if (!chats.length) newChat(); else { currentId = chats[0].id; renderChat(); renderHistory(); }
 applyLanguage();
-checkExternalAi();
-const externalAiTimer = setInterval(() => { if (checkExternalAi()) clearInterval(externalAiTimer); }, 1200);
+setAiStatus("connecting", "connecting");
 
 window.addEventListener("error", (event) => {
   console.warn("ALIFO AI page error:", event?.error || event?.message);

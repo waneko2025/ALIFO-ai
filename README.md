@@ -84,3 +84,17 @@ ALIFO AI attempts replies in this order:
 4. Built-in server fallback
 
 If external AI registration/login is refused, the connection fails, or the external request times out, ALIFO AI automatically continues to the local model. If WebGPU generation itself fails after initialization, it explicitly restarts the local model in CPU/WASM mode before using the built-in server fallback.
+
+
+## v6.2: チャットの外部AI/APIを使わないモード
+
+この版では、チャット回答にPuter.jsやOpenAIなどの外部AI APIを使用しません。
+
+AIの順番:
+1. WebGPUで端末内モデルを実行
+2. WebGPUが使えない場合はCPU/WASMで同じ端末内モデルを実行
+3. 端末内モデルも利用できない場合は、サーバー内の軽量フォールバックで回答
+
+モデルはTransformers.js経由でブラウザにダウンロードされ、推論はユーザーの端末上で行います。初回はモデルのダウンロードが必要です。APIキーは不要です。
+
+※画像生成は従来どおり外部画像サービスを利用します。
