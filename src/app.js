@@ -88,8 +88,14 @@ function createAIWorker() {
   return aiWorker;
 }
 
-function getLocalEngine() {
-  if (aiWorkerPromise) return aiWorkerPromise;
+function getLocalEngine(forceWasm = false) {
+  if (!forceWasm && aiWorkerPromise) return aiWorkerPromise;
+  if (forceWasm) {
+    aiWorker?.terminate?.();
+    aiWorker = null;
+    aiWorkerPromise = null;
+  }
+
   aiWorkerPromise = new Promise((resolve, reject) => {
     const worker = createAIWorker();
     const onMessage = (event) => {
@@ -108,7 +114,7 @@ function getLocalEngine() {
       }
     };
     worker.addEventListener("message", onMessage);
-    worker.postMessage({ type: "init", model: LOCAL_MODEL.id, language });
+    worker.postMessage({ type: "init", model: LOCAL_MODEL.id, language, forceWasm });
   }).catch(err => { aiWorkerPromise = null; throw err; });
   return aiWorkerPromise;
 }
@@ -285,7 +291,9 @@ async function sendMessage(text) {
     if (window.puter?.ai?.chat) {
       try {
         setAiStatus("connecting", "external");
-        const response = await window.puter.ai.chat([{ role: "system", content: system }, ...recent], false, { model: "gpt-5.6-luna" });
+        const externalPromise = window.puter.ai.chat([{ role: "system", content: system }, ...recent], false, { model: "gpt-5.6-luna" });
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("外部AIへの接続がタイムアウトしました。")), 15000));
+        const response = await Promise.race([externalPromise, timeoutPromise]);
         const answer = typeof response === "string" ? response.trim() : String(response?.message?.content ?? response?.text ?? response?.content ?? "").trim();
         if (!answer) throw new Error("No response");
         loading.querySelector(".bubble").textContent = answer;
@@ -297,9 +305,23 @@ async function sendMessage(text) {
 
     // 2) WebGPU, then 3) CPU/WASM are selected automatically inside the local worker.
     try {
-      const engine = await getLocalEngine();
+      let engine = await getLocalEngine();
       setAiStatus("connected", engine.runtime === "webgpu" ? "webgpu" : "cpu");
-      const answer = await engine.generate({ messages: [{ role: "system", content: system }, ...recent] });
+      let answer;
+      try {
+        answer = await engine.generate({ messages: [{ role: "system", content: system }, ...recent] });
+      } catch (localError) {
+        // If WebGPU initialized but generation failed, explicitly restart the local model in CPU/WASM.
+        if (engine.runtime === "webgpu") {
+          console.warn("WebGPU generation failed; switching to CPU/WASM", localError);
+          setAiStatus("connecting", "cpu");
+          engine = await getLocalEngine(true);
+          setAiStatus("connected", "cpu");
+          answer = await engine.generate({ messages: [{ role: "system", content: system }, ...recent] });
+        } else {
+          throw localError;
+        }
+      }
       if (!answer?.trim()) throw new Error("Local AI returned an empty response");
       loading.querySelector(".bubble").textContent = answer.trim();
       c.messages.push({ role: "assistant", content: answer.trim() }); save(); return;

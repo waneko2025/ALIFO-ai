@@ -16,7 +16,7 @@ async function hasWebGPU() {
 async function init(msg) {
   modelId = msg.model || modelId;
   const gpu = await hasWebGPU();
-  const attempts = gpu ? ["webgpu", "wasm"] : ["wasm"];
+  const attempts = msg.forceWasm ? ["wasm"] : (gpu ? ["webgpu", "wasm"] : ["wasm"]);
   let lastError = null;
   for (const device of attempts) {
     try {

@@ -73,3 +73,14 @@ ALIFO AIのチャットをPuter.js経由の外部AIに変更しました。サ�
 
 ## v5.4 AI fallback
 AI response priority is: external Puter AI → WebGPU local model → CPU/WASM local model → built-in server fallback. No OpenAI API key is required. The local model is loaded from the public Hugging Face model repository through Transformers.js.
+
+## AI fallback order
+
+ALIFO AI attempts replies in this order:
+
+1. External AI (Puter)
+2. WebGPU local model
+3. CPU/WASM local model
+4. Built-in server fallback
+
+If external AI registration/login is refused, the connection fails, or the external request times out, ALIFO AI automatically continues to the local model. If WebGPU generation itself fails after initialization, it explicitly restarts the local model in CPU/WASM mode before using the built-in server fallback.
