@@ -408,15 +408,43 @@ function localAnswerLooksRelevant(answer, question) {
   const a = textOf(answer);
   const q = textOf(question);
   if (!a || !q) return false;
-  // Reject obvious stale/off-topic local-model replies. For Japanese, require
-  // at least one meaningful 2+ character chunk from the current question to
-  // appear in the answer. Common function words are ignored.
+
+  // Lightweight topic guard for on-device/fallback models. This is not a
+  // truth detector; it only blocks obvious answers about a completely
+  // different subject (for example, answering a politics question with an
+  // unrelated TV-show description).
+  const stop = new Set([
+    "これ", "それ", "ここ", "こと", "もの", "ため", "よう", "感じ", "質問",
+    "説明", "教えて", "お願いします", "ください", "ですか", "ますか",
+    "について", "どんな", "どの", "どういう", "どうして", "なぜ", "なの",
+    "あなた", "わたし", "私", "今日", "現在", "日本", "英語", "日本語"
+  ]);
   const jpChunks = q.match(/[一-龯々〆ヵヶぁ-んァ-ヶー]{2,}/g) || [];
-  const useful = jpChunks.filter(x => !/^(これについて|それについて|どういうこと|教えてください|お願いします)$/.test(x));
-  if (useful.length) return useful.some(x => a.includes(x));
-  const words = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
-  if (words.length) return words.some(w => a.toLowerCase().includes(w));
+  const useful = [...new Set(jpChunks.filter(x => !stop.has(x) && x.length >= 2))];
+  const answerLower = a.toLowerCase();
+
+  if (useful.length) {
+    // Prefer content terms. If the question contains multiple content terms,
+    // accept the answer when at least one appears, with a small boost when
+    // two or more appear. This avoids rejecting short, correct explanations.
+    const hits = useful.filter(x => a.includes(x)).length;
+    if (hits > 0) return true;
+
+    // If the only broad term was "日本", do not reject a Japanese answer.
+    // Other content terms missing from the answer are a strong off-topic sign.
+    if (useful.length === 1 && useful[0] === "日本") return true;
+    return false;
+  }
+
+  const words = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !stop.has(w));
+  if (words.length) return words.some(w => answerLower.includes(w));
   return true;
+}
+
+function safeAnswer(answer, question) {
+  const text = textOf(answer).trim();
+  if (!text) return { ok: false, text: "" };
+  return { ok: localAnswerLooksRelevant(text, question), text };
 }
 
 async function sendMessage(text) {
@@ -437,8 +465,10 @@ async function sendMessage(text) {
     try {
       setAiStatus("connecting", "puter");
       const result = await puterReply(aiMessages);
+      const checked = safeAnswer(result.text, originalPrompt);
+      if (!checked.ok) throw new Error(`Puter ${result.kind} returned an unrelated answer`);
       setAiStatus("connected", "puter");
-      const answer = result.text.trim();
+      const answer = checked.text;
       loading.querySelector(".bubble").textContent = answer;
       c.messages.push({ role: "assistant", content: answer });
       save();
@@ -468,12 +498,11 @@ async function sendMessage(text) {
         }
       }
 
-      if (!answer?.trim()) throw new Error("Local AI returned an empty response");
-      if (!localAnswerLooksRelevant(answer, originalPrompt)) {
-        throw new Error("Local AI returned an unrelated answer");
-      }
-      loading.querySelector(".bubble").textContent = answer.trim();
-      c.messages.push({ role: "assistant", content: answer.trim() });
+      const checked = safeAnswer(answer, originalPrompt);
+      if (!checked.ok) throw new Error("Local AI returned an unrelated answer");
+      answer = checked.text;
+      loading.querySelector(".bubble").textContent = answer;
+      c.messages.push({ role: "assistant", content: answer });
       save();
       return;
     } catch (localError) {
@@ -493,8 +522,10 @@ async function sendMessage(text) {
     );
     const data = await fallbackResponse.json();
     if (!fallbackResponse.ok || !data.text) throw new Error(data.error || "Fallback failed");
-    loading.querySelector(".bubble").textContent = data.text;
-    c.messages.push({ role: "assistant", content: data.text });
+    const checkedFallback = safeAnswer(data.text, originalPrompt);
+    if (!checkedFallback.ok) throw new Error(language === "ja" ? "質問に関係する回答を生成できませんでした" : "I could not generate a response relevant to your question");
+    loading.querySelector(".bubble").textContent = checkedFallback.text;
+    c.messages.push({ role: "assistant", content: checkedFallback.text });
     save();
   } catch (e) {
     setAiStatus("error", "error");
