@@ -98,24 +98,58 @@ function getLocalEngine(forceWasm = false) {
 
   aiWorkerPromise = new Promise((resolve, reject) => {
     const worker = createAIWorker();
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.removeEventListener("message", onMessage);
+      worker.removeEventListener("error", onWorkerError);
+      fn(value);
+    };
+    const onWorkerError = (event) => {
+      finish(reject, new Error(event?.message || "Local AI worker failed"));
+    };
     const onMessage = (event) => {
       const d = event.data || {};
       if (d.type === "progress") {
         const el = document.querySelector("#localAiStatus");
-        if (el && Number.isFinite(d.progress)) el.textContent = language === "ja" ? `端末内AI（${d.runtime === "webgpu" ? "WebGPU" : "CPU/WASM"}）を準備中… ${Math.round(d.progress)}%` : `Preparing on-device AI (${d.runtime === "webgpu" ? "WebGPU" : "CPU/WASM"})… ${Math.round(d.progress)}%`;
+        if (el && Number.isFinite(d.progress)) {
+          el.textContent = language === "ja"
+            ? `端末内AI（${d.runtime === "webgpu" ? "WebGPU" : "CPU/WASM"}）を準備中… ${Math.round(d.progress)}%`
+            : `Preparing on-device AI (${d.runtime === "webgpu" ? "WebGPU" : "CPU/WASM"})… ${Math.round(d.progress)}%`;
+        }
         return;
       }
       if (d.type === "ready") {
-        worker.removeEventListener("message", onMessage);
-        resolve({ runtime: d.runtime, generate: (payload, onChunk) => generateInWorker(worker, payload, onChunk) });
+        finish(resolve, {
+          runtime: d.runtime,
+          generate: (payload, onChunk) => generateInWorker(worker, payload, onChunk)
+        });
       } else if (d.type === "error" && d.scope === "init") {
-        worker.removeEventListener("message", onMessage);
-        reject(Object.assign(new Error(d.message || "Local AI initialization failed"), { runtime: d.runtime || "unknown" }));
+        finish(reject, Object.assign(
+          new Error(d.message || "Local AI initialization failed"),
+          { runtime: d.runtime || "unknown" }
+        ));
       }
     };
+    // A browser-side model can take a while to download. If it has not
+    // initialized after this period, continue to the built-in fallback.
+    const timeoutMs = 25000;
+    const timer = setTimeout(() => {
+      worker.terminate();
+      aiWorker = null;
+      aiWorkerPromise = null;
+      finish(reject, new Error("Local AI initialization timed out"));
+    }, timeoutMs);
+
     worker.addEventListener("message", onMessage);
+    worker.addEventListener("error", onWorkerError);
     worker.postMessage({ type: "init", model: LOCAL_MODEL.id, language, forceWasm });
-  }).catch(err => { aiWorkerPromise = null; throw err; });
+  }).catch(err => {
+    aiWorkerPromise = null;
+    throw err;
+  });
   return aiWorkerPromise;
 }
 
@@ -273,6 +307,30 @@ function historyWithSystem(history, system) {
   return [{ role: "system", content: system }, ...history];
 }
 
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function generateWithTimeout(engine, payload, ms) {
+  return withTimeout(
+    engine.generate(payload),
+    ms,
+    "Local AI generation timed out"
+  );
+}
+
+function fetchWithTimeout(url, options, ms) {
+  return withTimeout(
+    fetch(url, options),
+    ms,
+    "Built-in fallback timed out"
+  );
+}
+
 async function sendMessage(text) {
   const c = ensureChat();
   const attachment = pendingAttachment;
@@ -291,51 +349,81 @@ async function sendMessage(text) {
     if (window.puter?.ai?.chat) {
       try {
         setAiStatus("connecting", "external");
-        const externalPromise = window.puter.ai.chat([{ role: "system", content: system }, ...recent], false, { model: "gpt-5.6-luna" });
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("外部AIへの接続がタイムアウトしました。")), 15000));
-        const response = await Promise.race([externalPromise, timeoutPromise]);
-        const answer = typeof response === "string" ? response.trim() : String(response?.message?.content ?? response?.text ?? response?.content ?? "").trim();
-        if (!answer) throw new Error("No response");
+        const externalPromise = Promise.resolve(
+          window.puter.ai.chat([{ role: "system", content: system }, ...recent], false, { model: "gpt-5.6-luna" })
+        );
+        const response = await Promise.race([
+          externalPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("External AI timeout")), 15000))
+        ]);
+        const answer = typeof response === "string"
+          ? response.trim()
+          : String(response?.message?.content ?? response?.text ?? response?.content ?? "").trim();
+        if (!answer) throw new Error("External AI returned an empty response");
         loading.querySelector(".bubble").textContent = answer;
-        c.messages.push({ role: "assistant", content: answer }); save(); setAiStatus("connected", "external"); return;
+        c.messages.push({ role: "assistant", content: answer });
+        save();
+        setAiStatus("connected", "external");
+        return;
       } catch (externalError) {
         console.warn("External AI failed; trying local AI", externalError);
       }
     }
 
-    // 2) WebGPU, then 3) CPU/WASM are selected automatically inside the local worker.
+    // 2) WebGPU, then 3) CPU/WASM.
     try {
+      setAiStatus("connecting", "webgpu");
       let engine = await getLocalEngine();
       setAiStatus("connected", engine.runtime === "webgpu" ? "webgpu" : "cpu");
+
       let answer;
       try {
-        answer = await engine.generate({ messages: [{ role: "system", content: system }, ...recent] });
+        answer = await generateWithTimeout(
+          engine,
+          { messages: [{ role: "system", content: system }, ...recent] },
+          20000
+        );
       } catch (localError) {
-        // If WebGPU initialized but generation failed, explicitly restart the local model in CPU/WASM.
         if (engine.runtime === "webgpu") {
           console.warn("WebGPU generation failed; switching to CPU/WASM", localError);
           setAiStatus("connecting", "cpu");
           engine = await getLocalEngine(true);
           setAiStatus("connected", "cpu");
-          answer = await engine.generate({ messages: [{ role: "system", content: system }, ...recent] });
+          answer = await generateWithTimeout(
+            engine,
+            { messages: [{ role: "system", content: system }, ...recent] },
+            20000
+          );
         } else {
           throw localError;
         }
       }
+
       if (!answer?.trim()) throw new Error("Local AI returned an empty response");
       loading.querySelector(".bubble").textContent = answer.trim();
-      c.messages.push({ role: "assistant", content: answer.trim() }); save(); return;
+      c.messages.push({ role: "assistant", content: answer.trim() });
+      save();
+      return;
     } catch (localError) {
       console.warn("Local AI failed; using built-in fallback", localError);
     }
 
     // 4) Built-in server fallback.
     setAiStatus("connected", "fallback");
-    const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: c.messages.slice(-30), language }) });
-    const data = await response.json();
-    if (!response.ok || !data.text) throw new Error(data.error || "Fallback failed");
+    const fallbackResponse = await fetchWithTimeout(
+      "/api/chat",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: c.messages.slice(-30), language })
+      },
+      15000
+    );
+    const data = await fallbackResponse.json();
+    if (!fallbackResponse.ok || !data.text) throw new Error(data.error || "Fallback failed");
     loading.querySelector(".bubble").textContent = data.text;
-    c.messages.push({ role: "assistant", content: data.text }); save();
+    c.messages.push({ role: "assistant", content: data.text });
+    save();
   } catch (e) {
     setAiStatus("error", "error");
     loading.querySelector(".bubble").textContent = language === "ja" ? `回答できませんでした。\n${e.message}` : `I couldn't answer that.\n${e.message}`;
@@ -451,10 +539,9 @@ checkExternalAi();
 const externalAiTimer = setInterval(() => { if (checkExternalAi()) clearInterval(externalAiTimer); }, 1200);
 
 window.addEventListener("error", (event) => {
-  const status = document.querySelector("#localAiStatus");
-  if (status) status.textContent = language === "ja" ? "エラーが発生しました。ページを再読み込みしてください。" : "An error occurred. Please reload the page.";
+  console.warn("ALIFO AI page error:", event?.error || event?.message);
 });
-window.addEventListener("unhandledrejection", () => {
-  const status = document.querySelector("#localAiStatus");
-  if (status) status.textContent = language === "ja" ? "処理中にエラーが発生しました。" : "An error occurred during processing.";
+window.addEventListener("unhandledrejection", (event) => {
+  console.warn("ALIFO AI unhandled rejection:", event?.reason);
 });
+

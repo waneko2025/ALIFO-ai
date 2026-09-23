@@ -69,3 +69,13 @@ self.onmessage = async (event) => {
     postMessage({ type: "error", id: msg.id, scope: msg.type, runtime, message: e?.message || String(e) });
   }
 };
+
+
+self.addEventListener("error", (event) => {
+  postMessage({
+    type: "error",
+    scope: "worker",
+    runtime,
+    message: event?.message || "Local AI worker error"
+  });
+});
