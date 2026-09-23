@@ -432,7 +432,35 @@ async function sendMessage(text) {
       console.warn("Puter AI failed; falling back to on-device AI", externalError);
     }
 
-    // 2) WebGPU, then 3) CPU/WASM local model.
+    // 2) Optional direct official provider connections. These are independent
+    // of Puter and only activate when the server owner has configured the
+    // corresponding official API credentials. Keys never reach the browser.
+    try {
+      const directResponse = await fetchWithTimeout(
+        "/api/external-ai",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: aiMessages })
+        },
+        22000
+      );
+      if (directResponse.ok) {
+        const direct = await directResponse.json();
+        if (direct.text?.trim()) {
+          setAiStatus("connected", "puter");
+          const answer = direct.text.trim();
+          loading.querySelector(".bubble").textContent = answer;
+          c.messages.push({ role: "assistant", content: answer });
+          save();
+          return;
+        }
+      }
+    } catch (directError) {
+      console.warn("Direct official AI connections failed; falling back to on-device AI", directError);
+    }
+
+    // 3) WebGPU, then 4) CPU/WASM local model.
     try {
       setAiStatus("connecting", "webgpu");
       let engine = await getLocalEngine();
@@ -462,7 +490,7 @@ async function sendMessage(text) {
       console.warn("Local AI failed; using built-in fallback", localError);
     }
 
-    // 4) Built-in server fallback.
+    // 5) Built-in server fallback.
     setAiStatus("connected", "fallback");
     const fallbackResponse = await fetchWithTimeout(
       "/api/chat",
@@ -517,7 +545,7 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
   }
 
-  add(language === "ja" ? "AI実行優先順位" : "AI priority", "Puter GPT → Puter Gemini → Puter Claude → WebGPU → CPU/WASM → built-in fallback");
+  add(language === "ja" ? "AI実行優先順位" : "AI priority", "Puter GPT → Puter Gemini → Puter Claude → direct ChatGPT → direct Gemini → direct Claude → WebGPU → CPU/WASM → built-in fallback");
   add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "ALIFO AI側では保存しません（Puter.jsを使用）" : "Not stored by ALIFO AI (uses Puter.js)");
   try {
     const origin = location.origin;
@@ -525,7 +553,7 @@ async function runRuntimeDiagnostic() {
     add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
   } catch {}
 
-  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Puter GPT → Gemini → Claude → WebGPU → CPU/WASM → built-in fallback");
+  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Puter GPT → Gemini → Claude → direct ChatGPT → direct Gemini → direct Claude → WebGPU → CPU/WASM → built-in fallback");
   const report = lines.join("\n");
   const title = language === "ja" ? "CPU/WASM実行環境の診断結果" : "CPU/WASM runtime diagnostic result";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";

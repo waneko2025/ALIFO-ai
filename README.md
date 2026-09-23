@@ -103,3 +103,10 @@ AIの順番:
 Puter自体が利用できない場合、Puter経由のGPT/Gemini/Claudeも利用できないため、端末内AIへ切り替えます。Puterとは独立したChatGPT/Gemini/ClaudeのAPIを追加する場合は、それぞれの正式なAPI接続が必要です。
 
 ※画像生成は従来どおり外部画像サービスを利用します。
+
+
+## v6.4 independent official AI fallbacks
+
+Puter remains first. If Puter is unavailable, the server can optionally try official direct connections in this order: OpenAI (ChatGPT models) → Google Gemini → Anthropic Claude. These are independent of Puter. They are disabled unless the corresponding server-side environment variables are configured. API keys are never sent to the browser. If no direct provider is configured or all direct providers fail, ALIFO AI continues to WebGPU → CPU/WASM → built-in fallback.
+
+Configure optional server-side variables: `OPENAI_API_KEY`, `OPENAI_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`.
