@@ -10,11 +10,6 @@
 </head>
 <body>
 
-<div class="alifo-theme-controls" data-theme-controls role="group" aria-label="Theme">
-  <button type="button" data-theme-choice="light" aria-label="ライトモード" aria-pressed="false">☀️</button>
-  <button type="button" data-theme-choice="dark" aria-label="ダークモード" aria-pressed="false">🌙</button>
-</div>
-
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="side-top">
@@ -24,6 +19,12 @@
     <button class="new-chat" id="newChat">＋ <span data-ja="新しいチャット" data-en="New chat">新しいチャット</span></button>
     <div class="history-title" data-ja="チャット履歴" data-en="Chat history">チャット履歴</div>
     <div id="history" class="history"></div>
+    
+<a class="alifo-media-link" href="https://alifo-media.com/" target="_blank" rel="noopener noreferrer">
+  <span aria-hidden="true">📰</span>
+  <span data-ja="ALIFOmediaニュース" data-en="ALIFOmedia News">ALIFOmediaニュース</span>
+</a>
+
     <div class="side-bottom"><button class="side-btn" id="settingsBtn">⚙ <span data-ja="設定" data-en="Settings">設定</span></button></div>
 </aside>
 
@@ -65,6 +66,19 @@
 <div class="modal hidden" id="settings">
   <div class="modal-box">
     <div class="modal-head"><h2 data-ja="設定" data-en="Settings">設定</h2><button class="icon-btn" id="closeSettings" aria-label="閉じる">×</button></div>
+    
+    <div class="settings-section">
+      <div class="settings-label" data-ja="テーマ" data-en="Theme">テーマ</div>
+      <div class="theme-setting-controls" data-theme-controls role="group" aria-label="Theme">
+        <button type="button" class="theme-setting-btn" data-theme-choice="light" aria-pressed="false">
+          ☀️ <span data-ja="ライト" data-en="Light">ライト</span>
+        </button>
+        <button type="button" class="theme-setting-btn" data-theme-choice="dark" aria-pressed="false">
+          🌙 <span data-ja="ダーク" data-en="Dark">ダーク</span>
+        </button>
+      </div>
+    </div>
+
     <label><span data-ja="言語" data-en="Language">言語</span><select id="settingLanguage"><option value="ja">日本語</option><option value="en">English</option></select></label>
     <button class="diagnostic-btn" id="runDiagnostic" data-ja="🔧 AI接続診断を実行" data-en="🔧 Run AI connection diagnostic">🔧 AI接続診断を実行</button>
     <div id="diagnosticResult" class="diagnostic-result hidden" aria-live="polite"></div>
@@ -73,7 +87,5 @@
 </div>
 <script src="https://js.puter.com/v2/"></script>
 <script type="module" src="/src/app.js"></script>
-<footer class="alifo-media-footer">
-</footer>
 </body>
 </html>

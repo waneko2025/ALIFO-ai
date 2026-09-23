@@ -28,6 +28,13 @@
   };
 
   applyTheme(getStoredTheme() || systemTheme(), false);
+  /* alifo-system-theme-listener: follow the OS theme until the user chooses one. */
+  const media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  if (media) {
+    media.addEventListener?.("change", () => {
+      if (!getStoredTheme()) applyTheme(systemTheme(), false);
+    });
+  }
 
   document.addEventListener("DOMContentLoaded", () => {
     const host = document.querySelector("[data-theme-controls]");

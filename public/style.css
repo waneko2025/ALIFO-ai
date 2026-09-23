@@ -60,53 +60,6 @@
 }
 
 
-/* ALIFO AI light/dark theme */
-:root {
-  color-scheme: light;
-  --alifo-bg: #ffffff;
-  --alifo-text: #171717;
-  --alifo-surface: #f5f5f5;
-  --alifo-border: rgba(0,0,0,.12);
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --alifo-bg: #0b0d10;
-  --alifo-text: #f4f5f7;
-  --alifo-surface: #15181d;
-  --alifo-border: rgba(255,255,255,.14);
-}
-html, body {
-  background: var(--alifo-bg);
-  color: var(--alifo-text);
-}
-.alifo-theme-controls {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 10000;
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--alifo-border);
-  border-radius: 12px;
-  background: var(--alifo-surface);
-  backdrop-filter: blur(10px);
-}
-.alifo-theme-controls button {
-  border: 0;
-  border-radius: 9px;
-  padding: 6px 9px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  opacity: .65;
-}
-.alifo-theme-controls button[aria-pressed="true"] {
-  background: rgba(127,127,127,.16);
-  opacity: 1;
-}
-
-
 /* v5.7 layout fix: keep language/settings visible and prevent page-level scrolling */
 html, body {
   width: 100%;
@@ -139,4 +92,94 @@ body {
 .sidebar, .side-panel, aside {
   min-height: 0;
   overflow: hidden;
+}
+
+
+/* v5.8: full dark theme + settings theme controls */
+:root[data-theme="dark"] {
+  --bg:#0f1115;
+  --panel:#171a20;
+  --text:#f1f3f5;
+  --muted:#a5abb6;
+  --line:#2a2e36;
+  --shadow:0 20px 60px rgba(0,0,0,.35);
+}
+:root[data-theme="dark"] .sidebar { background:#12151a; }
+:root[data-theme="dark"] .header { background:rgba(18,21,26,.92); }
+:root[data-theme="dark"] .new-chat,
+:root[data-theme="dark"] .quick button,
+:root[data-theme="dark"] .composer,
+:root[data-theme="dark"] .modal-box,
+:root[data-theme="dark"] .language,
+:root[data-theme="dark"] .image-action,
+:root[data-theme="dark"] .diagnostic-btn,
+:root[data-theme="dark"] .danger,
+:root[data-theme="dark"] .modal-box select {
+  background:#171a20;
+  color:var(--text);
+  border-color:var(--line);
+}
+:root[data-theme="dark"] .new-chat:hover,
+:root[data-theme="dark"] .side-btn:hover,
+:root[data-theme="dark"] .history-item:hover,
+:root[data-theme="dark"] .quick button:hover {
+  background:#20242c;
+}
+:root[data-theme="dark"] .history-item { color:#c1c6cf; }
+:root[data-theme="dark"] .history-item.active { background:#252936; color:#fff; }
+:root[data-theme="dark"] .bubble { background:#252a33; color:#f1f3f5; }
+:root[data-theme="dark"] .generated-image { background:#171a20; }
+:root[data-theme="dark"] .composer-wrap { background:linear-gradient(transparent,var(--bg) 25%); }
+:root[data-theme="dark"] .composer button#generateImage { background:#242832; color:#aeb1ff; }
+:root[data-theme="dark"] .diagnostic-result { background:#171a20; color:#dfe3e8; }
+:root[data-theme="dark"] .diagnostic-btn { color:#dfe3e8; }
+:root[data-theme="dark"] .danger { color:#ff8b8b; border-color:#5a3030; }
+:root[data-theme="dark"] .modal { background:rgba(0,0,0,.58); }
+:root[data-theme="dark"] .alifo-media-link { background:rgba(255,255,255,.06); }
+:root[data-theme="dark"] .alifo-media-link:hover { background:rgba(255,255,255,.11); }
+
+/* Keep the history flexible so Settings and ALIFOmedia stay visible. */
+.history { flex:1; min-height:0; }
+
+/* Settings theme selector */
+.settings-label {
+  font-size:13px;
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:8px;
+}
+.settings-section { margin:20px 0; }
+.theme-setting-controls { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.theme-setting-btn {
+  border:1px solid var(--line);
+  background:var(--panel);
+  color:var(--text);
+  border-radius:12px;
+  padding:11px 12px;
+  cursor:pointer;
+}
+.theme-setting-btn[aria-pressed="true"] {
+  border-color:var(--accent);
+  background:rgba(91,92,240,.12);
+  box-shadow:0 0 0 1px var(--accent) inset;
+}
+.alifo-media-link {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:100%;
+  box-sizing:border-box;
+  padding:10px 11px;
+  margin:10px 0 12px;
+  border-radius:12px;
+  text-decoration:none;
+  color:var(--text);
+  background:rgba(127,127,127,.08);
+  font-size:13px;
+  font-weight:600;
+  transition:background .18s ease, transform .18s ease;
+}
+.alifo-media-link:hover {
+  background:rgba(127,127,127,.15);
+  transform:translateY(-1px);
 }
