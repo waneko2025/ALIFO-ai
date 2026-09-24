@@ -201,3 +201,11 @@ body {
 .bubble.ai-answer pre code{background:transparent;padding:0}
 .bubble.ai-answer a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .message.user .bubble a{color:inherit}
+
+
+/* v7.0: live Puter model discovery */
+.puter-model-settings{margin:18px 0 12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#f8f9fc}
+.puter-model-title{font-weight:700;font-size:13px;margin-bottom:6px}
+.puter-model-info{font-size:12px;line-height:1.5;color:var(--muted);word-break:break-word;margin-bottom:8px}
+.puter-model-settings .diagnostic-btn{margin-bottom:0}
+:root[data-theme="dark"] .puter-model-settings{background:#171a20;border-color:var(--line)}

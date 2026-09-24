@@ -209,30 +209,97 @@ function extractPuterText(result) {
   return "";
 }
 
-async function getPuterModels() {
-  if (!window.puter?.ai?.listModels) return [];
+let puterModelCache = { models: [], providers: [], fetchedAt: 0 };
+const PUTER_MODEL_CACHE_MS = 5 * 60 * 1000;
+
+function normalizePuterModels(models) {
+  return (Array.isArray(models) ? models : [])
+    .filter(m => m && m.id)
+    .map(m => ({
+      id: String(m.id),
+      provider: String(m.provider || "unknown"),
+      name: String(m.name || m.id),
+      aliases: Array.isArray(m.aliases) ? m.aliases.map(String) : [],
+      context: Number(m.context) || 0,
+      max_tokens: Number(m.max_tokens) || 0,
+      cost: m.cost || null
+    }));
+}
+
+async function getPuterModelCatalog(force = false) {
+  if (!window.puter?.ai?.listModels) return { models: [], providers: [] };
+  const fresh = Date.now() - puterModelCache.fetchedAt < PUTER_MODEL_CACHE_MS;
+  if (!force && fresh && puterModelCache.models.length) return puterModelCache;
   try {
-    return await withTimeout(window.puter.ai.listModels(), 6000, "Puter model list timed out");
-  } catch { return []; }
+    const [models, providers] = await Promise.all([
+      withTimeout(window.puter.ai.listModels(), 10000, "Puter model list timed out"),
+      window.puter.ai.listModelProviders
+        ? withTimeout(window.puter.ai.listModelProviders(), 5000, "Puter provider list timed out").catch(() => [])
+        : Promise.resolve([])
+    ]);
+    puterModelCache = {
+      models: normalizePuterModels(models),
+      providers: Array.isArray(providers) ? providers.map(String) : [],
+      fetchedAt: Date.now()
+    };
+    updatePuterModelInfo();
+    return puterModelCache;
+  } catch (err) {
+    console.warn("Puter model discovery failed", err);
+    return puterModelCache;
+  }
+}
+
+async function getPuterModels(force = false) {
+  const catalog = await getPuterModelCatalog(force);
+  return catalog.models;
+}
+
+function providerFamily(kind, model) {
+  const hay = `${model?.provider || ""} ${model?.id || ""} ${model?.name || ""}`.toLowerCase();
+  if (kind === "gpt") return /openai|gpt/.test(hay);
+  if (kind === "gemini") return /google|gemini/.test(hay);
+  return /anthropic|claude/.test(hay);
 }
 
 function pickPuterModel(models, kind) {
   const list = Array.isArray(models) ? models : [];
-  const providerMatch = kind === "gpt"
-    ? m => /openai/i.test(`${m?.provider || ""} ${m?.id || ""}`)
-    : kind === "gemini"
-      ? m => /google|gemini/i.test(`${m?.provider || ""} ${m?.id || ""}`)
-      : m => /anthropic|claude/i.test(`${m?.provider || ""} ${m?.id || ""}`);
+  const candidates = list.filter(m => providerFamily(kind, m));
+  if (!candidates.length) return null;
+
+  // Prefer explicitly named current models when they are present, but never
+  // invent a model ID. Every returned ID comes from Puter's live catalog.
   const preferred = kind === "gpt"
-    ? ["gpt-5.6-luna", "openai/gpt-5.6-luna", "gpt-5.5"]
+    ? ["gpt-5.6-luna", "gpt-5.6", "gpt-5.5", "gpt-5-nano"]
     : kind === "gemini"
-      ? ["gemini-3.1-flash-lite", "gemini-3.1-flash", "gemini-3.0-flash"]
-      : ["claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6"];
+      ? ["gemini-3.1-flash-lite", "gemini-3.1-flash", "gemini-3.0-flash", "gemini-2.5-flash"]
+      : ["claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6", "claude-sonnet-4"];
   for (const wanted of preferred) {
-    const exact = list.find(m => String(m?.id || "").toLowerCase() === wanted.toLowerCase());
-    if (exact?.id) return exact.id;
+    const exact = candidates.find(m => m.id.toLowerCase() === wanted.toLowerCase() || m.aliases.some(a => a.toLowerCase() === wanted.toLowerCase()));
+    if (exact) return exact.id;
   }
-  return list.find(m => providerMatch(m))?.id || preferred[0] || null;
+
+  // Prefer free variants when Puter exposes one, then a model with a useful
+  // context window. This keeps discovery automatic without guessing IDs.
+  const sorted = [...candidates].sort((a, b) => {
+    const af = /:free$/i.test(a.id) ? 0 : 1;
+    const bf = /:free$/i.test(b.id) ? 0 : 1;
+    if (af !== bf) return af - bf;
+    return (b.context || 0) - (a.context || 0);
+  });
+  return sorted[0]?.id || null;
+}
+
+function updatePuterModelInfo() {
+  const box = document.querySelector("#puterModelInfo");
+  if (!box) return;
+  const count = puterModelCache.models.length;
+  const providers = puterModelCache.providers.length
+    ? puterModelCache.providers.join(", ")
+    : [...new Set(puterModelCache.models.map(m => m.provider))].join(", ");
+  box.textContent = language === "ja"
+    ? `Puterで利用可能なチャットモデル: ${count}個${providers ? `（提供元: ${providers}）` : ""}`
+    : `Puter chat models available: ${count}${providers ? ` (providers: ${providers})` : ""}`;
 }
 
 function isFactualQuestion(q = "") {
@@ -713,9 +780,22 @@ $("#openSidebar").onclick = () => $("#sidebar").classList.add("open");
 $("#closeSidebar").onclick = () => $("#sidebar").classList.remove("open");
 document.querySelectorAll(".quick button").forEach(b => b.onclick = () => sendMessage(b.dataset[language === "ja" ? "promptJa" : "promptEn"]));
 
+const refreshPuterModelsBtn = document.querySelector("#refreshPuterModels");
+if (refreshPuterModelsBtn) {
+  refreshPuterModelsBtn.onclick = async () => {
+    refreshPuterModelsBtn.disabled = true;
+    refreshPuterModelsBtn.textContent = language === "ja" ? "取得中…" : "Loading…";
+    await getPuterModelCatalog(true);
+    refreshPuterModelsBtn.textContent = language === "ja" ? "モデルを更新" : "Refresh models";
+    refreshPuterModelsBtn.disabled = false;
+  };
+}
+
 if (!chats.length) newChat(); else { currentId = chats[0].id; renderChat(); renderHistory(); }
 applyLanguage();
+updatePuterModelInfo();
 setAiStatus("connecting", "connecting");
+getPuterModelCatalog().catch(() => {});
 
 window.addEventListener("error", (event) => {
   console.warn("ALIFO AI page error:", event?.error || event?.message);

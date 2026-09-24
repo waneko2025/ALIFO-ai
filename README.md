@@ -131,3 +131,10 @@ Configure optional server-side variables: `OPENAI_API_KEY`, `OPENAI_MODEL`, `GEM
 - Local AI generation timeout: 60 seconds
 - Built-in server fallback timeout: 30 seconds
 These longer limits are intended to prevent slow model startup/downloads from being treated as failures too early.
+
+
+## v7.0: Puter model auto-discovery
+
+ALIFO AI now calls `puter.ai.listModels()` and `puter.ai.listModelProviders()` to discover the models/providers currently exposed by Puter. It does not invent or assume a model ID: the selected GPT, Gemini, or Claude model must come from the live catalog. The settings panel shows the discovered model count/providers and can refresh the catalog manually.
+
+Puter's official documentation states that `puter.ai.listModels()` returns model IDs and providers currently available to the app.
