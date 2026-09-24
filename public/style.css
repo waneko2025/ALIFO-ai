@@ -187,3 +187,17 @@ body {
 /* Provider status is intentionally shown by color only. */
 .external-ai-badge.puter{background:#edf9f2;border-color:#ccebd9}.external-ai-badge.puter .external-ai-dot{background:#25a866;box-shadow:0 0 0 3px rgba(37,168,102,.12)}.external-ai-badge.webgpu{background:#eef3ff;border-color:#cbd8ff}.external-ai-badge.webgpu .external-ai-dot{background:#4f7cff;box-shadow:0 0 0 3px rgba(79,124,255,.12)}.external-ai-badge.cpu{background:#f2efff;border-color:#d9d0ff}.external-ai-badge.cpu .external-ai-dot{background:#7657d9;box-shadow:0 0 0 3px rgba(118,87,217,.12)}.external-ai-badge.fallback{background:#fff8e8;border-color:#f1dfaa}.external-ai-badge.fallback .external-ai-dot{background:#d49a19;box-shadow:0 0 0 3px rgba(212,154,25,.12)}.external-ai-badge.error .external-ai-dot{background:#c94a4a;box-shadow:0 0 0 3px rgba(201,74,74,.12)}
 .external-ai-badge #externalAiBadgeText{display:none}
+
+/* ALIFO AI readable answers: clean Markdown, compact spacing, long-answer readability */
+.bubble.ai-answer{white-space:normal;overflow-wrap:anywhere}
+.bubble.ai-answer p{margin:0 0 10px}
+.bubble.ai-answer p:last-child{margin-bottom:0}
+.bubble.ai-answer h3,.bubble.ai-answer h4,.bubble.ai-answer h5{margin:4px 0 8px;line-height:1.4;font-size:1.05em}
+.bubble.ai-answer h4,.bubble.ai-answer h5{font-size:1em}
+.bubble.ai-answer ul,.bubble.ai-answer ol{margin:4px 0 10px;padding-left:22px}
+.bubble.ai-answer li{margin:3px 0}
+.bubble.ai-answer code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(0,0,0,.06);padding:2px 5px;border-radius:6px;font-size:.92em}
+.bubble.ai-answer pre{margin:10px 0 0;padding:11px 12px;overflow:auto;border-radius:10px;background:rgba(0,0,0,.06);font-size:.9em;line-height:1.55}
+.bubble.ai-answer pre code{background:transparent;padding:0}
+.bubble.ai-answer a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.message.user .bubble a{color:inherit}

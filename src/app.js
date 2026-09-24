@@ -245,8 +245,8 @@ function isQuestionLike(q = "") {
 
 function qualitySystemPrompt() {
   return language === "ja"
-    ? "あなたはALIFO AIです。ユーザーの現在の依頼を最優先してください。前の会話は明確に参照された場合だけ使います。事実を推測で埋めないでください。存在・人物・番組・商品・日付などを確認できない場合は、分からないと明確に伝えてください。最新情報については、利用できるWeb検索がある場合のみ検索し、検索していないのに検索したとは言わないでください。根拠が弱い情報を断定しないでください。質問には直接答え、必要なら短い注意書きを添えてください。日本語で自然に、分かりやすく、安全に答えてください。"
-    : "You are ALIFO AI. Prioritize the user's current request. Use previous conversation only when clearly referenced. Never fill factual gaps by guessing. If you cannot verify a person, show, product, date, or other fact, say that you cannot verify it. For current information, use web search when available; never claim to have searched when you did not. Do not state weakly supported facts as certain. Answer directly and clearly in English.";
+    ? "あなたはALIFO AIです。ユーザーの現在の依頼を最優先してください。前の会話は明確に参照された場合だけ使います。事実を推測で埋めず、確認できない情報は分からないと伝えてください。最新情報は利用できるWeb検索がある場合のみ検索し、検索していないのに検索したとは言わないでください。質問には最初に結論や要点を答えてください。回答は読みやすく整理し、必要な場合だけ見出しや箇条書きを使ってください。通常は短め（目安700文字以内）にし、複雑な質問だけ必要な範囲で詳しくしてください。同じ内容を繰り返さないでください。日本語で自然に、分かりやすく、安全に答えてください。"
+    : "You are ALIFO AI. Prioritize the user's current request. Use previous conversation only when clearly referenced. Never fill factual gaps by guessing; say when information cannot be verified. For current information, use web search when available and never claim to have searched when you did not. Give the conclusion or key point first. Keep answers easy to scan with short paragraphs, headings, or bullets only when useful. Usually stay concise (about 700 characters or less), and expand only when the question genuinely needs more detail. Do not repeat the same point. Answer naturally, clearly, and safely in English.";
 }
 
 async function puterReply(messages) {
@@ -263,7 +263,7 @@ async function puterReply(messages) {
       const options = {
         model,
         normalize: true,
-        max_tokens: 1200,
+        max_tokens: 1000,
         temperature: 0.2
       };
       // Puter documents web_search for OpenAI models. Use it only for questions
@@ -332,10 +332,72 @@ function renderChat() {
 function scrollToBottom() {
   messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
 }
+function renderMarkdown(text = "") {
+  const source = String(text).replace(/\r\n?/g, "\n").trim();
+  if (!source) return "";
+  const lines = source.split("\n");
+  const out = [];
+  let inCode = false;
+  let code = [];
+  let listType = null;
+
+  const inline = value => {
+    let s = escapeHtml(value);
+    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>");
+    s = s.replace(/https?:\/\/[^\s<]+/g, url => {
+      const clean = url.replace(/[.,!?、。]+$/, "");
+      const tail = url.slice(clean.length);
+      return `<a href="${clean}" target="_blank" rel="noopener noreferrer">${clean}</a>${tail}`;
+    });
+    return s;
+  };
+
+  const closeList = () => {
+    if (listType) { out.push(`</${listType}>`); listType = null; }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (/^```/.test(line)) {
+      if (inCode) {
+        out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+        code = [];
+        inCode = false;
+      } else {
+        closeList();
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) { code.push(raw); continue; }
+    if (!line.trim()) { closeList(); continue; }
+
+    let m = line.match(/^(#{1,3})\s+(.+)$/);
+    if (m) { closeList(); const level = m[1].length; out.push(`<h${level + 2}>${inline(m[2])}</h${level + 2}>`); continue; }
+    m = line.match(/^[-*]\s+(.+)$/);
+    if (m) { if (listType !== "ul") { closeList(); out.push("<ul>"); listType = "ul"; } out.push(`<li>${inline(m[1])}</li>`); continue; }
+    m = line.match(/^\d+[.)]\s+(.+)$/);
+    if (m) { if (listType !== "ol") { closeList(); out.push("<ol>"); listType = "ol"; } out.push(`<li>${inline(m[1])}</li>`); continue; }
+
+    closeList();
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  if (inCode) out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+  closeList();
+  return out.join("");
+}
+
 function addMessage(role, text, store = true) {
   const row = document.createElement("div"); row.className = "message " + role;
   if (role === "ai") { const a = document.createElement("div"); a.className = "avatar"; a.textContent = "A"; row.appendChild(a); }
-  const b = document.createElement("div"); b.className = "bubble"; b.textContent = text; row.appendChild(b); messages.appendChild(row);
+  const b = document.createElement("div"); b.className = "bubble";
+  if (role === "ai") { b.classList.add("ai-answer"); b.innerHTML = renderMarkdown(text); }
+  else b.textContent = text;
+  row.appendChild(b); messages.appendChild(row);
   scrollToBottom();
   if (store) {
     const c = ensureChat(); c.messages.push({ role, content: text });
@@ -482,7 +544,7 @@ async function sendMessage(text) {
       if (!checked.ok) throw new Error(`Puter ${result.kind} returned an unrelated answer`);
       setAiStatus("connected", "puter");
       const answer = checked.text;
-      loading.querySelector(".bubble").textContent = answer;
+      loading.querySelector(".bubble").innerHTML = renderMarkdown(answer);
       c.messages.push({ role: "assistant", content: answer });
       save();
       return;
@@ -514,7 +576,7 @@ async function sendMessage(text) {
       const checked = safeAnswer(answer, originalPrompt);
       if (!checked.ok) throw new Error("Local AI returned an unrelated answer");
       answer = checked.text;
-      loading.querySelector(".bubble").textContent = answer;
+      loading.querySelector(".bubble").innerHTML = renderMarkdown(answer);
       c.messages.push({ role: "assistant", content: answer });
       save();
       return;
@@ -537,7 +599,7 @@ async function sendMessage(text) {
     if (!fallbackResponse.ok || !data.text) throw new Error(data.error || "Fallback failed");
     const checkedFallback = safeAnswer(data.text, originalPrompt);
     if (!checkedFallback.ok) throw new Error(language === "ja" ? "質問に関係する回答を生成できませんでした" : "I could not generate a response relevant to your question");
-    loading.querySelector(".bubble").textContent = checkedFallback.text;
+    loading.querySelector(".bubble").innerHTML = renderMarkdown(checkedFallback.text);
     c.messages.push({ role: "assistant", content: checkedFallback.text });
     save();
   } catch (e) {
