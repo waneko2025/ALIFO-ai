@@ -232,7 +232,7 @@ async function getPuterModelCatalog(force = false) {
   if (!force && fresh && puterModelCache.models.length) return puterModelCache;
   try {
     const [models, providers] = await Promise.all([
-      withTimeout(window.puter.ai.listModels(), 10000, "Puter model list timed out"),
+      withTimeout(window.puter.ai.listModels(), 20000, "Puter model list timed out"),
       window.puter.ai.listModelProviders
         ? withTimeout(window.puter.ai.listModelProviders(), 5000, "Puter provider list timed out").catch(() => [])
         : Promise.resolve([])
@@ -318,36 +318,77 @@ function qualitySystemPrompt() {
 
 async function puterReply(messages) {
   if (!window.puter?.ai?.chat) throw new Error("Puter AI unavailable");
-  const models = await getPuterModels();
-  const order = ["gpt", "gemini", "claude"];
-  const factual = isFactualQuestion(messages.filter(m => m?.role === "user").at(-1)?.content || "");
+
+  let models = await getPuterModels();
+  const lastUser = messages.filter(m => m?.role === "user").at(-1)?.content || "";
+  const factual = isFactualQuestion(lastUser);
   let lastError = null;
 
-  for (const kind of order) {
-    const model = pickPuterModel(models, kind);
-    if (!model) continue;
-    try {
-      const options = {
-        model,
-        normalize: true,
-        max_tokens: 1000,
-        temperature: 0.2
-      };
-      // Puter documents web_search for OpenAI models. Use it only for questions
-      // that benefit from current/factual verification.
-      if (kind === "gpt" && factual) options.tools = [{ type: "web_search" }];
-      const result = await withTimeout(
-        window.puter.ai.chat(messages, options),
-        18000,
-        `${kind} response timed out`
-      );
-      const text = extractPuterText(result);
-      if (text) return { text, kind, model };
-    } catch (err) {
-      lastError = err;
-      console.warn(`Puter ${kind} model failed`, err);
+  // Prefer the three families the ALIFO UI exposes, but use the live catalog
+  // rather than hard-coding model IDs. If one model is unavailable, continue
+  // through other live models before falling back to the on-device AI.
+  const preferredKinds = ["gpt", "gemini", "claude"];
+  const ordered = [];
+  const seen = new Set();
+
+  for (const kind of preferredKinds) {
+    const candidates = models.filter(m => providerFamily(kind, m));
+    const preferred = pickPuterModel(candidates, kind);
+    if (preferred) {
+      const found = candidates.find(m => m.id === preferred);
+      if (found && !seen.has(found.id)) { ordered.push({ model: found, kind }); seen.add(found.id); }
+    }
+    // Add a few additional models from the same provider family as retries.
+    for (const m of candidates) {
+      if (ordered.length >= 9) break;
+      if (!seen.has(m.id)) { ordered.push({ model: m, kind }); seen.add(m.id); }
     }
   }
+
+  // If discovery is temporarily unavailable, still try Puter's documented
+  // default model instead of immediately abandoning Puter.
+  if (!ordered.length) {
+    try {
+      const result = await withTimeout(
+        window.puter.ai.chat(messages, {
+          normalize: true,
+          max_tokens: 1000,
+          temperature: 0.2
+        }),
+        45000,
+        "Puter default model timed out"
+      );
+      const text = extractPuterText(result);
+      if (text) return { text, kind: "gpt", model: "default" };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  for (const entry of ordered) {
+    const { model, kind } = entry;
+    try {
+      const options = {
+        model: model.id,
+        normalize: true,
+        max_tokens: Math.min(model.max_tokens || 1000, 1200),
+        temperature: 0.2
+      };
+      if (kind === "gpt" && factual) options.tools = [{ type: "web_search" }];
+
+      const result = await withTimeout(
+        window.puter.ai.chat(messages, options),
+        45000,
+        `Puter ${model.id} timed out`
+      );
+      const text = extractPuterText(result);
+      if (text) return { text, kind, model: model.id };
+    } catch (err) {
+      lastError = err;
+      console.warn(`Puter model failed: ${model.id}`, err);
+    }
+  }
+
   throw lastError || new Error("No usable Puter AI model");
 }
 
