@@ -563,12 +563,55 @@ function historyWithSystem(history, system) {
   return [{ role: "system", content: system }, ...history];
 }
 
+let timeoutCountdownSeq = 0;
+const activeTimeouts = new Map();
+let timeoutCountdownTimer = null;
+
+function renderTimeoutCountdown() {
+  const el = document.querySelector("#timeoutCountdown");
+  if (!el) return;
+  const now = Date.now();
+  for (const [id, item] of activeTimeouts) {
+    if (item.deadline <= now) activeTimeouts.delete(id);
+  }
+  if (!activeTimeouts.size) {
+    el.hidden = true;
+    el.textContent = "";
+    if (timeoutCountdownTimer) { clearTimeout(timeoutCountdownTimer); timeoutCountdownTimer = null; }
+    return;
+  }
+  let nearest = null;
+  for (const item of activeTimeouts.values()) {
+    if (!nearest || item.deadline < nearest.deadline) nearest = item;
+  }
+  const seconds = Math.max(0, Math.ceil((nearest.deadline - now) / 1000));
+  el.hidden = false;
+  el.textContent = language === "ja"
+    ? `タイムアウトまで ${seconds}秒`
+    : `Timeout in ${seconds}s`;
+  timeoutCountdownTimer = setTimeout(renderTimeoutCountdown, 250);
+}
+
+function startTimeoutCountdown(ms) {
+  const id = ++timeoutCountdownSeq;
+  activeTimeouts.set(id, { deadline: Date.now() + ms });
+  renderTimeoutCountdown();
+  return () => {
+    activeTimeouts.delete(id);
+    renderTimeoutCountdown();
+  };
+}
+
 function withTimeout(promise, ms, message) {
   let timer;
+  const stopCountdown = startTimeoutCountdown(ms);
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(message)), ms);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+    stopCountdown();
+  });
 }
 
 function generateWithTimeout(engine, payload, ms) {
