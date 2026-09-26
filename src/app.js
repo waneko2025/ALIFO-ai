@@ -116,6 +116,7 @@ function getLocalEngine(forceWasm = false) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      stopCountdown();
       worker.removeEventListener("message", onMessage);
       worker.removeEventListener("error", onWorkerError);
       fn(value);
@@ -149,6 +150,7 @@ function getLocalEngine(forceWasm = false) {
     // A browser-side model can take a while to download. If it has not
     // initialized after this period, continue to the built-in fallback.
     const timeoutMs = 90000;
+    const stopCountdown = startTimeoutCountdown(timeoutMs, "ローカルAI準備");
     const timer = setTimeout(() => {
       worker.terminate();
       aiWorker = null;
@@ -232,9 +234,9 @@ async function getPuterModelCatalog(force = false) {
   if (!force && fresh && puterModelCache.models.length) return puterModelCache;
   try {
     const [models, providers] = await Promise.all([
-      withTimeout(window.puter.ai.listModels(), 20000, "Puter model list timed out"),
+      withTimeout(window.puter.ai.listModels(), 20000, "Puter model list timed out", "Puterモデル一覧"),
       window.puter.ai.listModelProviders
-        ? withTimeout(window.puter.ai.listModelProviders(), 5000, "Puter provider list timed out").catch(() => [])
+        ? withTimeout(window.puter.ai.listModelProviders(), 5000, "Puter provider list timed out", "Puter提供元一覧").catch(() => [])
         : Promise.resolve([])
     ]);
     puterModelCache = {
@@ -356,7 +358,8 @@ async function puterReply(messages) {
           temperature: 0.2
         }),
         45000,
-        "Puter default model timed out"
+        "Puter default model timed out",
+        "Puter AI"
       );
       const text = extractPuterText(result);
       if (text) return { text, kind: "gpt", model: "default" };
@@ -379,7 +382,8 @@ async function puterReply(messages) {
       const result = await withTimeout(
         window.puter.ai.chat(messages, options),
         45000,
-        `Puter ${model.id} timed out`
+        `Puter ${model.id} timed out`,
+        `Puter ${kind.toUpperCase()}`
       );
       const text = extractPuterText(result);
       if (text) return { text, kind, model: model.id };
@@ -587,14 +591,14 @@ function renderTimeoutCountdown() {
   const seconds = Math.max(0, Math.ceil((nearest.deadline - now) / 1000));
   el.hidden = false;
   el.textContent = language === "ja"
-    ? `タイムアウトまで ${seconds}秒`
-    : `Timeout in ${seconds}s`;
+    ? `${nearest.label || "AI処理"}・タイムアウトまで ${seconds}秒`
+    : `${nearest.label || "AI"} · timeout in ${seconds}s`;
   timeoutCountdownTimer = setTimeout(renderTimeoutCountdown, 250);
 }
 
-function startTimeoutCountdown(ms) {
+function startTimeoutCountdown(ms, label = "AI処理") {
   const id = ++timeoutCountdownSeq;
-  activeTimeouts.set(id, { deadline: Date.now() + ms });
+  activeTimeouts.set(id, { deadline: Date.now() + ms, label });
   renderTimeoutCountdown();
   return () => {
     activeTimeouts.delete(id);
@@ -602,9 +606,9 @@ function startTimeoutCountdown(ms) {
   };
 }
 
-function withTimeout(promise, ms, message) {
+function withTimeout(promise, ms, message, label = "AI処理") {
   let timer;
-  const stopCountdown = startTimeoutCountdown(ms);
+  const stopCountdown = startTimeoutCountdown(ms, label);
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(message)), ms);
   });
@@ -615,10 +619,12 @@ function withTimeout(promise, ms, message) {
 }
 
 function generateWithTimeout(engine, payload, ms) {
+  const label = engine?.runtime === "webgpu" ? "WebGPU" : "CPU/WASM";
   return withTimeout(
     engine.generate(payload),
     ms,
-    "Local AI generation timed out"
+    "Local AI generation timed out",
+    label
   );
 }
 
@@ -626,7 +632,8 @@ function fetchWithTimeout(url, options, ms) {
   return withTimeout(
     fetch(url, options),
     ms,
-    "Built-in fallback timed out"
+    "Built-in fallback timed out",
+    "内蔵AI"
   );
 }
 
@@ -639,6 +646,11 @@ function localAnswerLooksRelevant(answer, question) {
   // truth detector; it only blocks obvious answers about a completely
   // different subject (for example, answering a politics question with an
   // unrelated TV-show description).
+  // Short greetings and simple conversational prompts can have answers that
+  // do not repeat the exact user wording. Never reject those just because
+  // there is no keyword overlap.
+  if (containsAny(q, ["こんにちは", "こんばんは", "おはよう", "やあ", "やほ", "やっほ", "ありがとう", "元気？", "元気"])) return true;
+
   const stop = new Set([
     "これ", "それ", "ここ", "こと", "もの", "ため", "よう", "感じ", "質問",
     "説明", "教えて", "お願いします", "ください", "ですか", "ますか",
@@ -756,17 +768,18 @@ async function sendMessage(text) {
     );
     const data = await fallbackResponse.json();
     if (!fallbackResponse.ok || !data.text) throw new Error(data.error || "Fallback failed");
-    const checkedFallback = safeAnswer(data.text, originalPrompt);
-    if (!checkedFallback.ok) throw new Error(language === "ja" ? "質問に関係する回答を生成できませんでした" : "I could not generate a response relevant to your question");
-    loading.querySelector(".bubble").innerHTML = renderMarkdown(checkedFallback.text);
-    c.messages.push({ role: "assistant", content: checkedFallback.text });
+    const fallbackText = textOf(data.text);
+    if (!fallbackText) throw new Error(data.error || "Fallback returned no text");
+    loading.querySelector(".bubble").innerHTML = renderMarkdown(fallbackText);
+    c.messages.push({ role: "assistant", content: fallbackText });
     save();
   } catch (e) {
     setAiStatus("error", "error");
     loading.querySelector(".bubble").textContent = language === "ja"
       ? "質問に関係する回答を生成できませんでした。もう一度質問してみてください。"
       : "I could not generate a relevant answer. Please try asking again.";
-    if (!prompt.value) { prompt.value = originalPrompt; prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 140) + "px"; }
+    // Keep the composer empty after an error. The failed request is already
+    // visible in the chat history; never copy it back into the input field.
   } finally {
     sendInFlight = false;
     send.disabled = false;
