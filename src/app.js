@@ -318,58 +318,61 @@ function qualitySystemPrompt() {
     : "You are ALIFO AI. Prioritize the user's current request. Use previous conversation only when clearly referenced. Never fill factual gaps by guessing; say when information cannot be verified. For current information, use web search when available and never claim to have searched when you did not. Give the conclusion or key point first. Keep answers easy to scan with short paragraphs, headings, or bullets only when useful. Usually stay concise (about 700 characters or less), and expand only when the question genuinely needs more detail. Do not repeat the same point. Answer naturally, clearly, and safely in English.";
 }
 
-async function puterReply(messages) {
-  if (!window.puter?.ai?.chat) throw new Error("Puter AI unavailable");
+async function waitForPuter(maxMs = 6000) {
+  const started = Date.now();
+  while (Date.now() - started < maxMs) {
+    if (window.puter?.ai?.chat) return true;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return !!window.puter?.ai?.chat;
+}
 
-  let models = await getPuterModels();
+async function puterReply(messages) {
+  const ready = await waitForPuter(6000);
+  if (!ready) throw new Error("Puter AI is not loaded");
+
+  // Use Puter's documented default model first. This is much more reliable
+  // than waiting for the whole live catalog and trying many models in series.
+  // The catalog is only used as a fallback and never blocks the first request.
   const lastUser = messages.filter(m => m?.role === "user").at(-1)?.content || "";
   const factual = isFactualQuestion(lastUser);
-  let lastError = null;
 
-  // Prefer the three families the ALIFO UI exposes, but use the live catalog
-  // rather than hard-coding model IDs. If one model is unavailable, continue
-  // through other live models before falling back to the on-device AI.
-  const preferredKinds = ["gpt", "gemini", "claude"];
-  const ordered = [];
-  const seen = new Set();
+  try {
+    const options = {
+      normalize: true,
+      max_tokens: 1000,
+      temperature: 0.2,
+      model: "gpt-5.6-luna"
+    };
+    if (factual) options.tools = [{ type: "web_search" }];
+    const result = await withTimeout(
+      window.puter.ai.chat(messages, options),
+      30000,
+      "Puter AI timed out",
+      "Puter AI"
+    );
+    const text = extractPuterText(result);
+    if (text) return { text, kind: "gpt", model: "gpt-5.6-luna" };
+    throw new Error("Puter AI returned an empty response");
+  } catch (firstError) {
+    console.warn("Puter default model failed", firstError);
+  }
 
-  for (const kind of preferredKinds) {
+  // If the default route fails, discover the live catalog and try at most
+  // one model from each major family. This avoids a long 9-model serial wait.
+  const models = await getPuterModels(true);
+  const attempts = [];
+  for (const kind of ["gpt", "gemini", "claude"]) {
     const candidates = models.filter(m => providerFamily(kind, m));
-    const preferred = pickPuterModel(candidates, kind);
-    if (preferred) {
-      const found = candidates.find(m => m.id === preferred);
-      if (found && !seen.has(found.id)) { ordered.push({ model: found, kind }); seen.add(found.id); }
-    }
-    // Add a few additional models from the same provider family as retries.
-    for (const m of candidates) {
-      if (ordered.length >= 9) break;
-      if (!seen.has(m.id)) { ordered.push({ model: m, kind }); seen.add(m.id); }
+    const picked = pickPuterModel(candidates, kind);
+    if (picked && picked !== "gpt-5.6-luna") {
+      const model = candidates.find(m => m.id === picked);
+      if (model) attempts.push({ model, kind });
     }
   }
 
-  // If discovery is temporarily unavailable, still try Puter's documented
-  // default model instead of immediately abandoning Puter.
-  if (!ordered.length) {
-    try {
-      const result = await withTimeout(
-        window.puter.ai.chat(messages, {
-          normalize: true,
-          max_tokens: 1000,
-          temperature: 0.2
-        }),
-        45000,
-        "Puter default model timed out",
-        "Puter AI"
-      );
-      const text = extractPuterText(result);
-      if (text) return { text, kind: "gpt", model: "default" };
-    } catch (err) {
-      lastError = err;
-    }
-  }
-
-  for (const entry of ordered) {
-    const { model, kind } = entry;
+  let lastError = null;
+  for (const { model, kind } of attempts) {
     try {
       const options = {
         model: model.id,
@@ -377,11 +380,9 @@ async function puterReply(messages) {
         max_tokens: Math.min(model.max_tokens || 1000, 1200),
         temperature: 0.2
       };
-      if (kind === "gpt" && factual) options.tools = [{ type: "web_search" }];
-
       const result = await withTimeout(
         window.puter.ai.chat(messages, options),
-        45000,
+        20000,
         `Puter ${model.id} timed out`,
         `Puter ${kind.toUpperCase()}`
       );
@@ -389,10 +390,9 @@ async function puterReply(messages) {
       if (text) return { text, kind, model: model.id };
     } catch (err) {
       lastError = err;
-      console.warn(`Puter model failed: ${model.id}`, err);
+      console.warn(`Puter fallback model failed: ${model.id}`, err);
     }
   }
-
   throw lastError || new Error("No usable Puter AI model");
 }
 
