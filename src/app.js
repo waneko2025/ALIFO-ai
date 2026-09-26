@@ -673,7 +673,15 @@ function safeAnswer(answer, question) {
   return { ok: localAnswerLooksRelevant(text, question), text };
 }
 
+let sendInFlight = false;
+let promptComposing = false;
+let lastPromptCompositionEnd = 0;
+
 async function sendMessage(text) {
+  // Never start a second chat request while the previous one is still running.
+  // This prevents two Enter presses/messages from racing the same UI state.
+  if (sendInFlight) return false;
+  sendInFlight = true;
   const c = ensureChat();
   const attachment = pendingAttachment;
   if (attachment) { addAttachmentMessage(attachment.src, attachment.name, text, true); pendingAttachment = null; updateAttachmentState(); }
@@ -759,7 +767,12 @@ async function sendMessage(text) {
       ? "質問に関係する回答を生成できませんでした。もう一度質問してみてください。"
       : "I could not generate a relevant answer. Please try asking again.";
     if (!prompt.value) { prompt.value = originalPrompt; prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 140) + "px"; }
-  } finally { send.disabled = false; prompt.focus(); }
+  } finally {
+    sendInFlight = false;
+    send.disabled = false;
+    prompt.focus();
+  }
+  return true;
 }
 
 async function runRuntimeDiagnostic() {
@@ -846,12 +859,43 @@ function readImageFile(file) {
   reader.readAsDataURL(file);
 }
 
-$("#form").onsubmit = e => { e.preventDefault(); const x = prompt.value.trim(); if (x || pendingAttachment) sendMessage(x); };
+$("#form").onsubmit = e => {
+  e.preventDefault();
+  // A submit can still be triggered programmatically even when the send
+  // button is disabled, so guard the form itself as well.
+  if (sendInFlight || promptComposing) return;
+  const x = prompt.value.trim();
+  if (x || pendingAttachment) sendMessage(x);
+};
 generateImageBtn.onclick = generateImage;
 attachImageBtn.onclick = () => imageInput.click();
 imageInput.onchange = e => readImageFile(e.target.files?.[0]);
 updateAttachmentState();
-prompt.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); } };
+prompt.addEventListener("compositionstart", () => {
+  promptComposing = true;
+});
+prompt.addEventListener("compositionend", () => {
+  promptComposing = false;
+  lastPromptCompositionEnd = performance.now();
+});
+prompt.onkeydown = e => {
+  if (e.key !== "Enter" || e.shiftKey) return;
+
+  // Japanese/IME conversion uses Enter to commit text. Do not send while
+  // composition is active, or immediately after compositionend. keyCode 229
+  // is retained for browsers that expose IME state that way.
+  if (promptComposing || e.isComposing || e.keyCode === 229) return;
+  if (performance.now() - lastPromptCompositionEnd < 80) return;
+
+  e.preventDefault();
+
+  // If the previous AI request is still running, keep the new text in the
+  // composer instead of starting a concurrent request. The user can press
+  // Enter again after the first response finishes.
+  if (sendInFlight) return;
+
+  $("#form").requestSubmit();
+};
 prompt.oninput = () => { prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 140) + "px"; };
 $("#newChat").onclick = newChat;
 $("#language").onclick = () => { language = language === "ja" ? "en" : "ja"; localStorage.setItem("alifo_lang", language); applyLanguage(); };
