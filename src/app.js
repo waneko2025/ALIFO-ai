@@ -790,47 +790,103 @@ async function sendMessage(text) {
 
 async function runRuntimeDiagnostic() {
   const box = document.querySelector("#diagnosticResult");
+  const button = document.querySelector("#runDiagnostic");
   if (!box) return;
   box.classList.remove("hidden");
-  box.textContent = language === "ja" ? "診断しています…" : "Running diagnostics…";
+  if (button) button.disabled = true;
+  box.textContent = language === "ja" ? "Puter接続を診断しています…" : "Testing the Puter connection…";
+
   const lines = [];
   const add = (label, value) => lines.push(`${label}: ${value}`);
   const bool = v => v ? (language === "ja" ? "はい" : "Yes") : (language === "ja" ? "いいえ" : "No");
+  const shortError = err => {
+    if (!err) return "unknown error";
+    if (typeof err === "string") return err.slice(0, 600);
+    const code = err?.error || err?.code || err?.name || "";
+    const msg = err?.msg || err?.message || String(err);
+    return `${code ? `${code}: ` : ""}${msg}`.slice(0, 600);
+  };
   let overall = "ok";
 
-  add(language === "ja" ? "安全な接続" : "Secure context", bool(window.isSecureContext));
-  add(language === "ja" ? "ブラウザ" : "Browser", navigator.userAgent);
+  add(language === "ja" ? "Puter.js読み込み" : "Puter.js loaded", bool(!!window.puter));
+  add(language === "ja" ? "Puter AIチャットAPI" : "Puter AI chat API", bool(!!window.puter?.ai?.chat));
+  add(language === "ja" ? "Puterモデル一覧API" : "Puter model list API", bool(!!window.puter?.ai?.listModels));
+  add(language === "ja" ? "Puter提供元一覧API" : "Puter provider list API", bool(!!window.puter?.ai?.listModelProviders));
 
-  if (!window.isSecureContext) overall = "warn";
-
-  try {
-    const storage = navigator.storage;
-    if (storage?.estimate) {
-      const estimate = await storage.estimate();
-      const used = Number(estimate.usage || 0);
-      const quota = Number(estimate.quota || 0);
-      add(language === "ja" ? "ブラウザ保存容量" : "Browser storage", quota ? `${Math.round(used / 1024 / 1024)}MB / ${Math.round(quota / 1024 / 1024)}MB` : "unknown");
+  if (!window.puter?.ai?.chat) {
+    overall = "error";
+    add(language === "ja" ? "外部AIテスト" : "External AI test", "NG: puter.ai.chat が利用できません");
+  } else {
+    try {
+      const signedIn = typeof window.puter?.auth?.isSignedIn === "function"
+        ? window.puter.auth.isSignedIn()
+        : null;
+      add(language === "ja" ? "Puterログイン状態" : "Puter sign-in status", signedIn === null ? "確認不可" : bool(signedIn));
+    } catch (err) {
+      add(language === "ja" ? "Puterログイン状態" : "Puter sign-in status", `ERROR ${shortError(err)}`);
+      overall = "warn";
     }
-    add(language === "ja" ? "WASM対応" : "WASM support", typeof WebAssembly !== "undefined" ? "OK" : "NG");
-    add(language === "ja" ? "SharedArrayBuffer" : "SharedArrayBuffer", typeof SharedArrayBuffer !== "undefined" ? "利用可能" : "利用不可");
-    const online = typeof navigator.onLine === "boolean" ? navigator.onLine : null;
-    add(language === "ja" ? "ネットワーク接続" : "Network", online === null ? "unknown" : bool(online));
-  } catch (err) {
-    overall = "warn";
-    add(language === "ja" ? "ストレージ診断" : "Storage diagnostic", `ERROR ${err?.message || err}`);
+
+    // Test the exact path ALIFO uses for real answers. This is deliberately
+    // user-triggered so opening Settings does not consume an AI request.
+    try {
+      const testResult = await withTimeout(
+        window.puter.ai.chat(
+          [{ role: "user", content: "「こんにちは」とだけ返してください。" }],
+          { model: "gpt-5.6-luna", normalize: true, max_tokens: 32, temperature: 0 }
+        ),
+        15000,
+        "Puter AI test timed out",
+        "Puter接続テスト"
+      );
+      const text = extractPuterText(testResult);
+      if (!text) throw new Error("Puter returned an empty response");
+      add(language === "ja" ? "GPT-5.6 Luna接続テスト" : "GPT-5.6 Luna connection test", `OK: ${text.slice(0, 160)}`);
+    } catch (err) {
+      overall = "error";
+      add(language === "ja" ? "GPT-5.6 Luna接続テスト" : "GPT-5.6 Luna connection test", `NG: ${shortError(err)}`);
+    }
   }
 
-  add(language === "ja" ? "AI実行優先順位" : "AI priority", "Puter GPT → Puter Gemini → Puter Claude → WebGPU → CPU/WASM → built-in fallback");
-  add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "ALIFO AI側では保存しません（Puter.jsを使用）" : "Not stored by ALIFO AI (uses Puter.js)");
+  // The catalog test is separate from the actual chat test so a successful
+  // model-list request cannot be mistaken for a working AI chat connection.
   try {
-    const origin = location.origin;
-    add(language === "ja" ? "ALIFO AIのオリジン" : "ALIFO AI origin", origin);
-    add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
-  } catch {}
+    if (window.puter?.ai?.listModels) {
+      const models = await withTimeout(
+        window.puter.ai.listModels(),
+        10000,
+        "Puter model list timed out",
+        "Puterモデル一覧"
+      );
+      const normalized = normalizePuterModels(models);
+      add(language === "ja" ? "モデル一覧取得" : "Model catalog", `OK: ${normalized.length}個`);
+      const gpt = normalized.find(m => m.id.toLowerCase() === "gpt-5.6-luna");
+      add(language === "ja" ? "GPT-5.6 LunaモデルID" : "GPT-5.6 Luna model ID", gpt ? `確認済み (${gpt.provider})` : "一覧に見つかりません");
+      if (!gpt && overall === "ok") overall = "warn";
+    }
+  } catch (err) {
+    if (overall === "ok") overall = "warn";
+    add(language === "ja" ? "モデル一覧取得" : "Model catalog", `NG: ${shortError(err)}`);
+  }
 
-  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI runtime", "Puter GPT → Gemini → Claude → WebGPU → CPU/WASM → built-in fallback");
+  try {
+    const providers = window.puter?.ai?.listModelProviders
+      ? await withTimeout(window.puter.ai.listModelProviders(), 5000, "Puter provider list timed out", "Puter提供元一覧")
+      : [];
+    add(language === "ja" ? "提供元一覧" : "Providers", Array.isArray(providers) && providers.length ? providers.map(String).join(", ") : "取得不可");
+  } catch (err) {
+    if (overall === "ok") overall = "warn";
+    add(language === "ja" ? "提供元一覧" : "Providers", `NG: ${shortError(err)}`);
+  }
+
+  add(language === "ja" ? "安全な接続" : "Secure context", bool(window.isSecureContext));
+  add(language === "ja" ? "ネットワーク" : "Network", typeof navigator.onLine === "boolean" ? bool(navigator.onLine) : "unknown");
+  add(language === "ja" ? "ALIFO AIのAI方式" : "ALIFO AI AI path", "Puter GPT → Puter fallback models → WebGPU → CPU/WASM → built-in fallback");
+  add(language === "ja" ? "APIキー" : "API key", language === "ja" ? "ALIFO AI側では保存しません" : "Not stored by ALIFO AI");
+  add(language === "ja" ? "診断時刻" : "Diagnostic time", new Date().toISOString());
+
   const report = lines.join("\n");
-  const title = language === "ja" ? "CPU/WASM実行環境の診断結果" : "CPU/WASM runtime diagnostic result";
+  const title = language === "ja" ? "Puter AI接続診断結果" : "Puter AI connection diagnostic";
   const cls = overall === "error" ? "diag-error" : overall === "warn" ? "diag-warn" : "diag-ok";
   box.innerHTML = `<strong class="${cls}">${title}</strong><pre>${escapeHtml(report)}</pre><div class="diag-actions"><button class="diag-copy" id="copyDiagnostic">${language === "ja" ? "結果をコピー" : "Copy result"}</button></div>`;
   const copy = document.querySelector("#copyDiagnostic");
@@ -842,6 +898,7 @@ async function runRuntimeDiagnostic() {
       copy.textContent = language === "ja" ? "コピーできませんでした" : "Copy failed";
     }
   };
+  if (button) button.disabled = false;
 }
 
 function escapeHtml(value) {
