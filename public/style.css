@@ -210,3 +210,19 @@ body {
 .puter-model-info{font-size:12px;line-height:1.5;color:var(--muted);word-break:break-word;margin-bottom:8px}
 .puter-model-settings .diagnostic-btn{margin-bottom:0}
 :root[data-theme="dark"] .puter-model-settings{background:#171a20;border-color:var(--line)}
+
+/* v7.9: settings modal gets its own visible vertical scroll area.
+   The app keeps page-level scrolling disabled, so long diagnostic results
+   must scroll inside the modal instead of extending below the viewport. */
+.modal-box {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 560px) {
+  .modal { padding: 12px; }
+  .modal-box { max-height: calc(100vh - 24px); }
+}
