@@ -138,3 +138,8 @@ These longer limits are intended to prevent slow model startup/downloads from be
 ALIFO AI now calls `puter.ai.listModels()` and `puter.ai.listModelProviders()` to discover the models/providers currently exposed by Puter. It does not invent or assume a model ID: the selected GPT, Gemini, or Claude model must come from the live catalog. The settings panel shows the discovered model count/providers and can refresh the catalog manually.
 
 Puter's official documentation states that `puter.ai.listModels()` returns model IDs and providers currently available to the app.
+
+
+## v7.5 local AI fix
+- WebGPU uses Q4; CPU/WASM uses Q8 for Qwen2.5-0.5B-Instruct.
+- This avoids requesting the WebGPU-oriented Q4 path on the WASM backend.

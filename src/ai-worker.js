@@ -22,9 +22,12 @@ async function init(msg) {
     try {
       runtime = device === "webgpu" ? "webgpu" : "cpu";
       postMessage({ type: "progress", progress: 1, runtime });
+      // Transformers.js recommends q8 as the normal WASM/CPU dtype; q4 is
+      // kept for WebGPU. The Qwen2.5-0.5B-Instruct ONNX model provides both.
+      const dtype = device === "webgpu" ? "q4" : "q8";
       generator = await pipeline("text-generation", modelId, {
         device: device === "webgpu" ? "webgpu" : "wasm",
-        dtype: "q4",
+        dtype,
         progress_callback: (p) => {
           const value = typeof p?.progress === "number" ? p.progress : 0;
           postMessage({ type: "progress", progress: Math.max(1, Math.min(99, value)), runtime });

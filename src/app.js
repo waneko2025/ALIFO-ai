@@ -149,7 +149,7 @@ function getLocalEngine(forceWasm = false) {
     };
     // A browser-side model can take a while to download. If it has not
     // initialized after this period, continue to the built-in fallback.
-    const timeoutMs = 90000;
+    const timeoutMs = 30000;
     const stopCountdown = startTimeoutCountdown(timeoutMs, "ローカルAI準備");
     const timer = setTimeout(() => {
       worker.terminate();
