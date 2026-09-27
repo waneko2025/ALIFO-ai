@@ -436,14 +436,66 @@ function ensureChat() {
   if (!currentId || !chats.find(c => c.id === currentId)) newChat();
   return chats.find(c => c.id === currentId);
 }
+function deleteChat(id) {
+  const index = chats.findIndex(c => c.id === id);
+  if (index < 0) return;
+  const chat = chats[index];
+  const ok = confirm(language === "ja"
+    ? `「${chat.title || "このチャット"}」を削除しますか？`
+    : `Delete "${chat.title || "this chat"}"?`);
+  if (!ok) return;
+
+  const wasCurrent = id === currentId;
+  chats.splice(index, 1);
+
+  if (wasCurrent) {
+    const next = chats[index] || chats[index - 1];
+    if (next) {
+      currentId = next.id;
+    } else {
+      currentId = null;
+      newChat();
+      return;
+    }
+  }
+
+  save();
+  renderChat();
+  renderHistory();
+}
+
 function renderHistory() {
   const box = $("#history"); box.innerHTML = "";
   chats.forEach(c => {
-    const b = document.createElement("button");
-    b.className = "history-item" + (c.id === currentId ? " active" : "");
-    b.textContent = c.title;
-    b.onclick = () => { currentId = c.id; renderChat(); renderHistory(); $("#sidebar").classList.remove("open"); };
-    box.appendChild(b);
+    const row = document.createElement("div");
+    row.className = "history-row" + (c.id === currentId ? " active" : "");
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "history-item" + (c.id === currentId ? " active" : "");
+    openButton.textContent = c.title;
+    openButton.title = c.title;
+    openButton.onclick = () => {
+      currentId = c.id;
+      renderChat();
+      renderHistory();
+      $("#sidebar").classList.remove("open");
+    };
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "history-delete";
+    deleteButton.textContent = "×";
+    deleteButton.setAttribute("aria-label", language === "ja" ? `「${c.title}」を削除` : `Delete "${c.title}"`);
+    deleteButton.title = language === "ja" ? "この履歴を削除" : "Delete this chat";
+    deleteButton.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteChat(c.id);
+    };
+
+    row.append(openButton, deleteButton);
+    box.appendChild(row);
   });
 }
 function renderChat() {
