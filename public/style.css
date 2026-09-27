@@ -226,3 +226,10 @@ body {
   .modal { padding: 12px; }
   .modal-box { max-height: calc(100vh - 24px); }
 }
+
+
+/* Individual history delete button fix */
+#history .history-row{display:flex!important;align-items:center!important;width:100%!important;min-width:0!important;gap:4px!important;border-radius:12px!important;}
+#history .history-row .history-item{display:block!important;flex:1 1 auto!important;min-width:0!important;width:auto!important;}
+#history .history-row .history-delete{display:grid!important;place-items:center!important;flex:0 0 30px!important;width:30px!important;height:30px!important;margin:0 5px 0 0!important;padding:0!important;border:0!important;border-radius:9px!important;background:transparent!important;color:#9a9da6!important;cursor:pointer!important;font-size:18px!important;line-height:1!important;}
+#history .history-row .history-delete:hover{background:#ececf3!important;color:#c43f3f!important;}
