@@ -331,22 +331,38 @@ async function puterReply(messages) {
   const ready = await waitForPuter(6000);
   if (!ready) throw new Error("Puter AI is not loaded");
 
-  // Use Puter's documented default model first. This is much more reliable
-  // than waiting for the whole live catalog and trying many models in series.
-  // The catalog is only used as a fallback and never blocks the first request.
-  const lastUser = messages.filter(m => m?.role === "user").at(-1)?.content || "";
-  const factual = isFactualQuestion(lastUser);
+  const userMessages = messages.filter(m => m?.role === "user" || m?.role === "assistant");
+  const lastUser = userMessages.filter(m => m?.role === "user").at(-1)?.content || "";
+  if (!lastUser.trim()) throw new Error("No current user message");
+
+  // Puter diagnostics prove that a simple chat request works. To make the
+  // normal chat path use that same reliable shape, send one plain-text prompt
+  // instead of passing a system-role message array to the provider.
+  // Conversation context is embedded as text, so no provider-specific
+  // handling of the "system" role is required.
+  const context = userMessages.slice(-8).map(m => {
+    const role = m.role === "assistant" ? "ALIFO AI" : "ユーザー";
+    return `${role}: ${textOf(m.content).slice(0, 3000)}`;
+  }).join("\n");
+
+  const directPrompt = [
+    qualitySystemPrompt(),
+    context ? `\nこれまでの会話（必要な場合だけ参照）:\n${context}` : "",
+    `\n現在のユーザーの依頼:\n${textOf(lastUser)}`,
+    "\n現在の依頼を最優先して、自然な回答を返してください。"
+  ].filter(Boolean).join("\n");
+
+  const baseOptions = {
+    model: "gpt-5.6-luna",
+    normalize: true,
+    max_tokens: 1000,
+    temperature: 0.2
+  };
 
   try {
-    const options = {
-      normalize: true,
-      max_tokens: 1000,
-      temperature: 0.2,
-      model: "gpt-5.6-luna"
-    };
-    if (factual) options.tools = [{ type: "web_search" }];
+    setAiStatus("connecting", "puter");
     const result = await withTimeout(
-      window.puter.ai.chat(messages, options),
+      window.puter.ai.chat(directPrompt, baseOptions),
       30000,
       "Puter AI timed out",
       "Puter AI"
@@ -355,36 +371,11 @@ async function puterReply(messages) {
     if (text) return { text, kind: "gpt", model: "gpt-5.6-luna" };
     throw new Error("Puter AI returned an empty response");
   } catch (firstError) {
-    console.warn("Puter messages call failed; retrying current turn directly", firstError);
-    // The diagnostic path uses a simple prompt and succeeds. Retry the exact
-    // current user turn in that same shape before falling back to local AI.
-    // This avoids a provider-specific failure with a multi-message payload
-    // from incorrectly making Puter look unavailable.
-    try {
-      const directOptions = {
-        normalize: true,
-        max_tokens: 1000,
-        temperature: 0.2,
-        model: "gpt-5.6-luna"
-      };
-      if (factual) directOptions.tools = [{ type: "web_search" }];
-      const directPrompt = `${qualitySystemPrompt()}\n\nユーザーの現在の依頼:\n${lastUser}`;
-      const directResult = await withTimeout(
-        window.puter.ai.chat(directPrompt, directOptions),
-        30000,
-        "Puter AI direct retry timed out",
-        "Puter AI"
-      );
-      const directText = extractPuterText(directResult);
-      if (directText) return { text: directText, kind: "gpt", model: "gpt-5.6-luna" };
-      throw new Error("Puter direct retry returned an empty response");
-    } catch (directError) {
-      console.warn("Puter direct retry failed", directError);
-    }
+    console.warn("Puter GPT-5.6 Luna direct chat failed; trying live fallback models", firstError);
   }
 
-  // If the default route fails, discover the live catalog and try at most
-  // one model from each major family. This avoids a long 9-model serial wait.
+  // If GPT-5.6 Luna fails, discover the current live catalog and try at most
+  // one model from each major family. All IDs come from Puter's live catalog.
   const models = await getPuterModels(true);
   const attempts = [];
   for (const kind of ["gpt", "gemini", "claude"]) {
@@ -406,7 +397,7 @@ async function puterReply(messages) {
         temperature: 0.2
       };
       const result = await withTimeout(
-        window.puter.ai.chat(messages, options),
+        window.puter.ai.chat(directPrompt, options),
         20000,
         `Puter ${model.id} timed out`,
         `Puter ${kind.toUpperCase()}`
@@ -418,6 +409,7 @@ async function puterReply(messages) {
       console.warn(`Puter fallback model failed: ${model.id}`, err);
     }
   }
+
   throw lastError || new Error("No usable Puter AI model");
 }
 
