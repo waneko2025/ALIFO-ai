@@ -327,6 +327,36 @@ async function waitForPuter(maxMs = 6000) {
   return !!window.puter?.ai?.chat;
 }
 
+async function getAlifoMediaContext(query) {
+  const q = textOf(query).toLowerCase();
+  if (!/alifo\s*media|alifomedia|alifo-media|alifoメディア|alifoニュース|alifomediaニュース/.test(q)) return "";
+  try {
+    const response = await withTimeout(
+      fetch("/api/alifomedia-news", { headers: { "Accept": "application/json" } }),
+      9000,
+      "ALIFOmedia news fetch timed out",
+      "ALIFOmedia news"
+    );
+    if (!response.ok) return "";
+    const data = await response.json();
+    const items = Array.isArray(data?.items) ? data.items.slice(0, 8) : [];
+    if (!items.length) return "";
+    return [
+      "ALIFOmediaの最新ニュース情報（ALIFO AIが直接取得した公開情報）:",
+      ...items.map((item, i) => [
+        `${i + 1}. ${textOf(item.title)}`,
+        item.date ? `日付: ${textOf(item.date)}` : "",
+        item.description ? `概要: ${textOf(item.description)}` : "",
+        item.link ? `URL: ${item.link}` : ""
+      ].filter(Boolean).join(" | ")),
+      "この情報を使える場合は、Web検索機能がないという説明ではなく、上記のALIFOmedia情報をもとに回答してください。"
+    ].join("\n");
+  } catch (error) {
+    console.warn("ALIFOmedia news context unavailable", error);
+    return "";
+  }
+}
+
 async function puterReply(messages) {
   const ready = await waitForPuter(6000);
   if (!ready) throw new Error("Puter AI is not loaded");
@@ -345,9 +375,11 @@ async function puterReply(messages) {
     return `${role}: ${textOf(m.content).slice(0, 3000)}`;
   }).join("\n");
 
+  const alifoMediaContext = await getAlifoMediaContext(lastUser);
   const directPrompt = [
     qualitySystemPrompt(),
     context ? `\nこれまでの会話（必要な場合だけ参照）:\n${context}` : "",
+    alifoMediaContext ? `\n${alifoMediaContext}` : "",
     `\n現在のユーザーの依頼:\n${textOf(lastUser)}`,
     "\n現在の依頼を最優先して、自然な回答を返してください。"
   ].filter(Boolean).join("\n");
