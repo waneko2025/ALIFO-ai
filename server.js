@@ -443,75 +443,79 @@ function extractFeedItems(xml = "") {
 }
 
 async function fetchAlifoMediaNews() {
-  // Try common WordPress REST endpoints first. This avoids depending on an
-  // RSS/Atom feed being enabled on ALIFOmedia.
-  const wpCandidates = [
-    "https://alifo-media.com/wp-json/wp/v2/posts?per_page=8&_fields=link,date,modified,title,excerpt",
-    "https://alifo-media.com/wp-json/wp/v2/pages?per_page=8&_fields=link,date,modified,title,excerpt"
+  // Keep the news lookup fast: all candidate endpoints are tried in parallel
+  // and the first usable result wins. The old sequential approach could spend
+  // tens of seconds trying unavailable feeds on Render's free instance.
+  const candidates = [
+    {
+      url: "https://alifo-media.com/wp-json/wp/v2/posts?per_page=8&_fields=link,date,modified,title,excerpt",
+      kind: "json"
+    },
+    {
+      url: "https://alifo-media.com/feed",
+      kind: "xml"
+    },
+    {
+      url: "https://alifo-media.com/feed/",
+      kind: "xml"
+    },
+    {
+      url: "https://alifo-media.com/rss",
+      kind: "xml"
+    },
+    {
+      url: "https://alifo-media.com/rss.xml",
+      kind: "xml"
+    },
+    {
+      url: "https://alifo-media.com/",
+      kind: "html"
+    }
   ];
 
-  for (const url of wpCandidates) {
+  const readCandidate = async ({ url, kind }) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
+    const timer = setTimeout(() => controller.abort(), 4500);
     try {
       const res = await fetch(url, {
         signal: controller.signal,
         redirect: "follow",
         headers: {
-          "Accept": "application/json",
+          "Accept": kind === "json" ? "application/json" : "text/html,application/xml,text/xml;q=0.9,*/*;q=0.8",
           "User-Agent": "ALIFO-AI/1.0 (ALIFOmedia news reader)"
         }
       });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (!Array.isArray(data) || !data.length) continue;
+      if (!res.ok) return null;
 
-      const items = data.map(item => ({
-        title: stripHtmlForNews(item?.title?.rendered || item?.title || "").slice(0, 180),
-        link: typeof item?.link === "string" ? item.link : "",
-        date: item?.date || item?.modified || "",
-        description: stripHtmlForNews(item?.excerpt?.rendered || item?.excerpt || "").slice(0, 300)
-      })).filter(item => item.title);
-
-      if (items.length) return { source: url, items: items.slice(0, 8) };
-    } catch {}
-    finally { clearTimeout(timer); }
-  }
-
-  const candidates = [
-    "https://alifo-media.com/feed",
-    "https://alifo-media.com/feed/",
-    "https://alifo-media.com/rss",
-    "https://alifo-media.com/rss.xml",
-    "https://alifo-media.com/feed.xml",
-    "https://alifo-media.com/atom.xml",
-    "https://alifo-media.com/"
-  ];
-
-  for (const url of candidates) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    try {
-      const res = await fetch(url, {
-        signal: controller.signal,
-        redirect: "follow",
-        headers: { "User-Agent": "ALIFO-AI/1.0 (ALIFOmedia news reader)" }
-      });
-      if (!res.ok) continue;
       const type = res.headers.get("content-type") || "";
       const body = await res.text();
 
-      if (/xml|rss|atom/i.test(type) || /^\s*<\?xml|<rss\b|<feed\b/i.test(body)) {
-        const items = extractFeedItems(body);
-        if (items.length) return { source: url, items };
+      if (kind === "json" || /application\/json/i.test(type)) {
+        try {
+          const data = JSON.parse(body);
+          if (!Array.isArray(data) || !data.length) return null;
+          const items = data.map(item => ({
+            title: stripHtmlForNews(item?.title?.rendered || item?.title || "").slice(0, 180),
+            link: typeof item?.link === "string" ? item.link : "",
+            date: item?.date || item?.modified || "",
+            description: stripHtmlForNews(item?.excerpt?.rendered || item?.excerpt || "").slice(0, 300)
+          })).filter(item => item.title);
+          return items.length ? { source: url, items: items.slice(0, 8) } : null;
+        } catch {
+          return null;
+        }
       }
 
-      if (url.endsWith("/") && /<html/i.test(body)) {
+      if (/xml|rss|atom/i.test(type) || /^\s*<\?xml|<rss\b|<feed\b/i.test(body)) {
+        const items = extractFeedItems(body);
+        if (items.length) return { source: url, items: items.slice(0, 8) };
+      }
+
+      if (kind === "html" && /<html/i.test(body)) {
         const items = [];
         const seen = new Set();
-
-        // Prefer semantic article blocks when the page exposes them.
         const articleBlocks = body.match(/<article\b[\s\S]*?<\/article>/gi) || [];
+
         for (const block of articleBlocks.slice(0, 12)) {
           const href = block.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/i)?.[1] || "";
           const heading = block.match(/<(h1|h2|h3|h4)\b[^>]*>([\s\S]*?)<\/\1>/i)?.[2] || "";
@@ -531,7 +535,6 @@ async function fetchAlifoMediaNews() {
           } catch {}
         }
 
-        // Fallback for pages without <article> elements.
         if (!items.length) {
           const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
           let m;
@@ -547,13 +550,19 @@ async function fetchAlifoMediaNews() {
           }
         }
 
-        if (items.length) return { source: url, items: items.slice(0, 8) };
+        return items.length ? { source: url, items: items.slice(0, 8) } : null;
       }
-    } catch {}
-    finally { clearTimeout(timer); }
-  }
 
-  return null;
+      return null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const results = await Promise.all(candidates.map(readCandidate));
+  return results.find(Boolean) || null;
 }
 
 function smartReply(messages, language) {
