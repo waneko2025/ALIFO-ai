@@ -443,6 +443,41 @@ function extractFeedItems(xml = "") {
 }
 
 async function fetchAlifoMediaNews() {
+  // Try common WordPress REST endpoints first. This avoids depending on an
+  // RSS/Atom feed being enabled on ALIFOmedia.
+  const wpCandidates = [
+    "https://alifo-media.com/wp-json/wp/v2/posts?per_page=8&_fields=link,date,modified,title,excerpt",
+    "https://alifo-media.com/wp-json/wp/v2/pages?per_page=8&_fields=link,date,modified,title,excerpt"
+  ];
+
+  for (const url of wpCandidates) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        redirect: "follow",
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "ALIFO-AI/1.0 (ALIFOmedia news reader)"
+        }
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (!Array.isArray(data) || !data.length) continue;
+
+      const items = data.map(item => ({
+        title: stripHtmlForNews(item?.title?.rendered || item?.title || "").slice(0, 180),
+        link: typeof item?.link === "string" ? item.link : "",
+        date: item?.date || item?.modified || "",
+        description: stripHtmlForNews(item?.excerpt?.rendered || item?.excerpt || "").slice(0, 300)
+      })).filter(item => item.title);
+
+      if (items.length) return { source: url, items: items.slice(0, 8) };
+    } catch {}
+    finally { clearTimeout(timer); }
+  }
+
   const candidates = [
     "https://alifo-media.com/feed",
     "https://alifo-media.com/feed/",
@@ -452,6 +487,7 @@ async function fetchAlifoMediaNews() {
     "https://alifo-media.com/atom.xml",
     "https://alifo-media.com/"
   ];
+
   for (const url of candidates) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 7000);
@@ -464,30 +500,59 @@ async function fetchAlifoMediaNews() {
       if (!res.ok) continue;
       const type = res.headers.get("content-type") || "";
       const body = await res.text();
+
       if (/xml|rss|atom/i.test(type) || /^\s*<\?xml|<rss\b|<feed\b/i.test(body)) {
         const items = extractFeedItems(body);
         if (items.length) return { source: url, items };
       }
+
       if (url.endsWith("/") && /<html/i.test(body)) {
-        const links = [];
+        const items = [];
         const seen = new Set();
-        const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-        let m;
-        while ((m = re.exec(body)) && links.length < 12) {
-          const title = stripHtmlForNews(m[2]).replace(/\s+/g, " ").trim();
-          if (title.length < 8 || title.length > 180) continue;
+
+        // Prefer semantic article blocks when the page exposes them.
+        const articleBlocks = body.match(/<article\b[\\s\\S]*?<\\/article>/gi) || [];
+        for (const block of articleBlocks.slice(0, 12)) {
+          const href = block.match(/<a\\b[^>]*href=["']([^"']+)["'][^>]*>/i)?.[1] || "";
+          const heading = block.match(/<(h1|h2|h3|h4)\\b[^>]*>([\\s\\S]*?)<\\/\\1>/i)?.[2] || "";
+          const time = block.match(/<time\\b[^>]*(?:datetime=["']([^"']+)["'])?[^>]*>([\\s\\S]*?)<\\/time>/i);
+          const title = stripHtmlForNews(heading).replace(/\\s+/g, " ").trim();
+          if (!href || title.length < 4 || title.length > 180) continue;
           try {
-            const link = new URL(m[1], url).href;
+            const link = new URL(href, url).href;
             if (!link.startsWith("https://alifo-media.com/") || seen.has(link)) continue;
             seen.add(link);
-            links.push({ title, link, date: "", description: "" });
+            items.push({
+              title,
+              link,
+              date: time?.[1] || stripHtmlForNews(time?.[2] || ""),
+              description: stripHtmlForNews(block).slice(0, 300)
+            });
           } catch {}
         }
-        if (links.length) return { source: url, items: links.slice(0, 8) };
+
+        // Fallback for pages without <article> elements.
+        if (!items.length) {
+          const re = /<a\\b[^>]*href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+          let m;
+          while ((m = re.exec(body)) && items.length < 12) {
+            const title = stripHtmlForNews(m[2]).replace(/\\s+/g, " ").trim();
+            if (title.length < 8 || title.length > 180) continue;
+            try {
+              const link = new URL(m[1], url).href;
+              if (!link.startsWith("https://alifo-media.com/") || seen.has(link)) continue;
+              seen.add(link);
+              items.push({ title, link, date: "", description: "" });
+            } catch {}
+          }
+        }
+
+        if (items.length) return { source: url, items: items.slice(0, 8) };
       }
     } catch {}
     finally { clearTimeout(timer); }
   }
+
   return null;
 }
 
