@@ -355,7 +355,32 @@ async function puterReply(messages) {
     if (text) return { text, kind: "gpt", model: "gpt-5.6-luna" };
     throw new Error("Puter AI returned an empty response");
   } catch (firstError) {
-    console.warn("Puter default model failed", firstError);
+    console.warn("Puter messages call failed; retrying current turn directly", firstError);
+    // The diagnostic path uses a simple prompt and succeeds. Retry the exact
+    // current user turn in that same shape before falling back to local AI.
+    // This avoids a provider-specific failure with a multi-message payload
+    // from incorrectly making Puter look unavailable.
+    try {
+      const directOptions = {
+        normalize: true,
+        max_tokens: 1000,
+        temperature: 0.2,
+        model: "gpt-5.6-luna"
+      };
+      if (factual) directOptions.tools = [{ type: "web_search" }];
+      const directPrompt = `${qualitySystemPrompt()}\n\nユーザーの現在の依頼:\n${lastUser}`;
+      const directResult = await withTimeout(
+        window.puter.ai.chat(directPrompt, directOptions),
+        30000,
+        "Puter AI direct retry timed out",
+        "Puter AI"
+      );
+      const directText = extractPuterText(directResult);
+      if (directText) return { text: directText, kind: "gpt", model: "gpt-5.6-luna" };
+      throw new Error("Puter direct retry returned an empty response");
+    } catch (directError) {
+      console.warn("Puter direct retry failed", directError);
+    }
   }
 
   // If the default route fails, discover the live catalog and try at most
@@ -711,10 +736,13 @@ async function sendMessage(text) {
     try {
       setAiStatus("connecting", "puter");
       const result = await puterReply(aiMessages);
-      const checked = safeAnswer(result.text, originalPrompt);
-      if (!checked.ok) throw new Error(`Puter ${result.kind} returned an unrelated answer`);
+      // Do not run the on-device topic guard against Puter. External models
+      // can answer naturally without repeating a keyword from the question
+      // (e.g. "あなたは誰？" -> "私はALIFO AIです"). The guard is only for
+      // the weaker local/fallback models where obvious topic drift matters.
+      const answer = textOf(result.text).trim();
+      if (!answer) throw new Error("Puter returned an empty answer");
       setAiStatus("connected", "puter");
-      const answer = checked.text;
       loading.querySelector(".bubble").innerHTML = renderMarkdown(answer);
       c.messages.push({ role: "assistant", content: answer });
       save();
