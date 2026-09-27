@@ -511,12 +511,12 @@ async function fetchAlifoMediaNews() {
         const seen = new Set();
 
         // Prefer semantic article blocks when the page exposes them.
-        const articleBlocks = body.match(/<article\b[\\s\\S]*?<\\/article>/gi) || [];
+        const articleBlocks = body.match(/<article\b[\s\S]*?<\/article>/gi) || [];
         for (const block of articleBlocks.slice(0, 12)) {
-          const href = block.match(/<a\\b[^>]*href=["']([^"']+)["'][^>]*>/i)?.[1] || "";
-          const heading = block.match(/<(h1|h2|h3|h4)\\b[^>]*>([\\s\\S]*?)<\\/\\1>/i)?.[2] || "";
-          const time = block.match(/<time\\b[^>]*(?:datetime=["']([^"']+)["'])?[^>]*>([\\s\\S]*?)<\\/time>/i);
-          const title = stripHtmlForNews(heading).replace(/\\s+/g, " ").trim();
+          const href = block.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/i)?.[1] || "";
+          const heading = block.match(/<(h1|h2|h3|h4)\b[^>]*>([\s\S]*?)<\/\1>/i)?.[2] || "";
+          const time = block.match(/<time\b[^>]*(?:datetime=["']([^"']+)["'])?[^>]*>([\s\S]*?)<\/time>/i);
+          const title = stripHtmlForNews(heading).replace(/\s+/g, " ").trim();
           if (!href || title.length < 4 || title.length > 180) continue;
           try {
             const link = new URL(href, url).href;
@@ -533,10 +533,10 @@ async function fetchAlifoMediaNews() {
 
         // Fallback for pages without <article> elements.
         if (!items.length) {
-          const re = /<a\\b[^>]*href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+          const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
           let m;
           while ((m = re.exec(body)) && items.length < 12) {
-            const title = stripHtmlForNews(m[2]).replace(/\\s+/g, " ").trim();
+            const title = stripHtmlForNews(m[2]).replace(/\s+/g, " ").trim();
             if (title.length < 8 || title.length > 180) continue;
             try {
               const link = new URL(m[1], url).href;
