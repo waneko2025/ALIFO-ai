@@ -584,7 +584,8 @@ app.post("/api/external-ai", async (req, res) => {
   }
 });
 
-\napp.get("/api/alifomedia-news", async (req, res) => {
+
+app.get("/api/alifomedia-news", async (req, res) => {
   if (!rateLimit(clientKey(req, "alifomedia-news"), 30, 60_000)) {
     return res.status(429).json({ error: "しばらく待ってからもう一度お試しください。" });
   }
@@ -596,7 +597,8 @@ app.post("/api/external-ai", async (req, res) => {
     return res.status(502).json({ error: "ALIFOmediaニュースの取得に失敗しました。" });
   }
 });
-\napp.post("/api/chat", async (req, res) => {
+
+app.post("/api/chat", async (req, res) => {
   if (!rateLimit(clientKey(req, "chat"), 60, 60_000)) {
     return res.status(429).json({ error: "しばらく待ってからもう一度お試しください。" });
   }
