@@ -589,7 +589,7 @@ function renderMarkdown(text = "") {
     if (inCode) { code.push(raw); continue; }
     if (!line.trim()) { closeList(); continue; }
 
-    let m = line.match(/^(#{1,3})\s+(.+)$/);
+    let m = line.match(/^(#{1,3})\s*(.+)$/);
     if (m) { closeList(); const level = m[1].length; out.push(`<h${level + 2}>${inline(m[2])}</h${level + 2}>`); continue; }
     m = line.match(/^[-*]\s+(.+)$/);
     if (m) { if (listType !== "ul") { closeList(); out.push("<ul>"); listType = "ul"; } out.push(`<li>${inline(m[1])}</li>`); continue; }
