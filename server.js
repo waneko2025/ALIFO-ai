@@ -408,6 +408,89 @@ async function knowledgeReply(messages, language) {
 
 
 
+function isAlifoMediaRequest(q = "") {
+  const t = textOf(q).toLowerCase();
+  return /alifo\\s*media|alifomedia|alifo-media|alifoメディア|alifoニュース|alifomediaニュース/.test(t);
+}
+
+function stripHtmlForNews(html = "") {
+  return String(html)
+    .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
+    .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\\s+/g, " ")
+    .trim();
+}
+
+function extractFeedItems(xml = "") {
+  const items = [];
+  const blocks = String(xml).match(/<(item|entry)\\b[\\s\\S]*?<\\/(item|entry)>/gi) || [];
+  for (const block of blocks.slice(0, 10)) {
+    const title = (block.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1] || "").replace(/<[^>]+>/g, "").trim();
+    const linkMatch = block.match(/<link[^>]+href=["']([^"']+)["'][^>]*>/i);
+    const link = linkMatch?.[1] || block.match(/<link[^>]*>([\\s\\S]*?)<\\/link>/i)?.[1]?.trim() || "";
+    const date = (block.match(/<(pubDate|published|updated)[^>]*>([\\s\\S]*?)<\\/\\1>/i)?.[2] || "").replace(/<[^>]+>/g, "").trim();
+    const description = (block.match(/<(description|summary|content:encoded)[^>]*>([\\s\\S]*?)<\\/(description|summary|content:encoded)>/i)?.[2] || "");
+    const cleanDescription = stripHtmlForNews(description).slice(0, 300);
+    if (title) items.push({ title, link, date, description: cleanDescription });
+  }
+  return items;
+}
+
+async function fetchAlifoMediaNews() {
+  const candidates = [
+    "https://alifo-media.com/feed",
+    "https://alifo-media.com/feed/",
+    "https://alifo-media.com/rss",
+    "https://alifo-media.com/rss.xml",
+    "https://alifo-media.com/feed.xml",
+    "https://alifo-media.com/atom.xml",
+    "https://alifo-media.com/"
+  ];
+  for (const url of candidates) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        redirect: "follow",
+        headers: { "User-Agent": "ALIFO-AI/1.0 (ALIFOmedia news reader)" }
+      });
+      if (!res.ok) continue;
+      const type = res.headers.get("content-type") || "";
+      const body = await res.text();
+      if (/xml|rss|atom/i.test(type) || /^\\s*<\\?xml|<rss\\b|<feed\\b/i.test(body)) {
+        const items = extractFeedItems(body);
+        if (items.length) return { source: url, items };
+      }
+      if (url.endsWith("/") && /<html/i.test(body)) {
+        const links = [];
+        const seen = new Set();
+        const re = /<a\\b[^>]*href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+        let m;
+        while ((m = re.exec(body)) && links.length < 12) {
+          const title = stripHtmlForNews(m[2]).replace(/\\s+/g, " ").trim();
+          if (title.length < 8 || title.length > 180) continue;
+          try {
+            const link = new URL(m[1], url).href;
+            if (!link.startsWith("https://alifo-media.com/") || seen.has(link)) continue;
+            seen.add(link);
+            links.push({ title, link, date: "", description: "" });
+          } catch {}
+        }
+        if (links.length) return { source: url, items: links.slice(0, 8) };
+      }
+    } catch {}
+    finally { clearTimeout(timer); }
+  }
+  return null;
+}
+
 function smartReply(messages, language) {
   const q = lastUser(messages);
   // Never fabricate an answer to a factual/current question when the external
@@ -436,7 +519,19 @@ app.post("/api/external-ai", async (req, res) => {
   }
 });
 
-app.post("/api/chat", async (req, res) => {
+\napp.get("/api/alifomedia-news", async (req, res) => {
+  if (!rateLimit(clientKey(req, "alifomedia-news"), 30, 60_000)) {
+    return res.status(429).json({ error: "しばらく待ってからもう一度お試しください。" });
+  }
+  try {
+    const result = await fetchAlifoMediaNews();
+    if (!result) return res.status(502).json({ error: "ALIFOmediaニュースを取得できませんでした。" });
+    return res.json({ site: "ALIFOmedia", ...result });
+  } catch {
+    return res.status(502).json({ error: "ALIFOmediaニュースの取得に失敗しました。" });
+  }
+});
+\napp.post("/api/chat", async (req, res) => {
   if (!rateLimit(clientKey(req, "chat"), 60, 60_000)) {
     return res.status(429).json({ error: "しばらく待ってからもう一度お試しください。" });
   }
